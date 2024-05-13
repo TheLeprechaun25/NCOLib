@@ -16,7 +16,7 @@ pip install torch
 
 ## Getting Started
 ### Basic Usage Example
-For a hands-on introduction, check out examples/basic_tour.ipynb, which explains the basic usage of the library.
+For a hands-on introduction, check out [examples/basic_tour.ipynb](examples/basic_tour.ipynb), which explains the basic usage of the library.
 
 ## Roadmap
 
