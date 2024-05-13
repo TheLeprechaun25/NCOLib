@@ -11,8 +11,59 @@ from nco_lib.data.data_loader import generate_random_graph
 from nco_lib.trainer import ConstructiveTrainer, ImprovementTrainer
 
 
-
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+class DefaultProblem(ConstructiveProblem):
+    def _init_instances(self, state: State) -> State:
+        # Set the random seed
+        if state.seed is not None:
+            torch.manual_seed(state.seed)
+        # Generate needed features here:
+        #state.needed_feature =
+        return state
+
+    def _init_solutions(self, state: State) -> State:
+        # Initialize the solutions here:
+        #state.solutions =
+        return state
+
+    def _init_features(self, state: State) -> State:
+        # Initialize the features here:
+        #state.node_features =
+        #state.edge_features =
+        return state
+
+    def _init_mask(self, state: State) -> State:
+        # Initialize the mask here:
+        #state.mask =
+        return state
+
+    def _obj_function(self, state: State) -> torch.Tensor:
+        # Compute the objective function here:
+        #obj_value =
+        return obj_value
+
+    def _update_features(self, state: State) -> State:
+        # Update the features here:
+        #state.node_features =
+        #state.edge_features =
+        return state
+
+    def _update_solutions(self, state: State, action: torch.Tensor) -> State:
+        # Update the solutions with the action here:
+        #state.solutions =
+        return state
+
+    def _update_mask(self, state: State, action: torch.Tensor) -> State:
+        # Update the mask with the action here:
+        #state.mask =
+        return state
+
+    def _check_completeness(self, state: State) -> State:
+        # Check if the solution is complete here:
+        #state.is_complete =
+        return state
 
 
 example1_0 = False  # TSP constructive
