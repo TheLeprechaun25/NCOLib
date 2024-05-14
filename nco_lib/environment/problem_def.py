@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Tuple
-
+from typing import Tuple
 import torch
 
 
@@ -9,19 +8,21 @@ class State:
         """
         Initialize the state of the environment.
         """
-        self.batch_size = None
-        self.problem_size = None
-        self.device = None
-        self.seed = None
-        self.node_features = None
-        self.edge_features = None
-        self.graph_features = None  # Graph-level features (context)
-        self.solutions = None
+        self.data = kwargs  # User-defined attributes stored in a dictionary
+
+        self.batch_size = None  # Number of instances in the batch
+        self.problem_size = None  # Size of the problem (number of nodes)
+
+        self.node_features = None  # Node features
+        self.adj_matrix = None  # Adjacency matrix
+        self.edge_features = None   # Edge features
+
+        self.solutions = None   # Current solutions
         self.mask = None
         self.is_complete = None
-        self.n_classes = None
-        self.__dict__.update(kwargs)
 
+        self.seed = None
+        self.device = None
 
 
 class Problem(ABC):
@@ -161,9 +162,9 @@ class ConstructiveProblem(Problem):
     def _init_features(self, state: State) -> State:
         raise NotImplementedError
 
-    @abstractmethod
     def _init_mask(self, state: State) -> State:
-        raise NotImplementedError
+        state.mask = torch.zeros((state.batch_size, state.problem_size, 1), device=state.device)
+        return state
 
     @abstractmethod
     def _obj_function(self, state: State) -> torch.Tensor:
