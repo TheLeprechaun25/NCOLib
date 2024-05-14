@@ -1,61 +1,68 @@
 from abc import ABC, abstractmethod
-from typing import Tuple
 import torch
 
 
 class State:
     def __init__(self, **kwargs):
         """
-        Initialize the state of the environment.
+        The state of the environment. It contains all the information needed to represent the problem instance and the
+        current solution.
         """
         self.data = kwargs  # User-defined attributes stored in a dictionary
 
-        self.batch_size = None  # Number of instances in the batch
-        self.problem_size = None  # Size of the problem (number of nodes)
+        self.batch_size: int = 1  # Number of instances in the batch
+        self.problem_size: int = 1  # Size of the problem (number of nodes)
 
-        self.node_features = None  # Node features
-        self.adj_matrix = None  # Adjacency matrix
-        self.edge_features = None   # Edge features
+        self.node_features: torch.Tensor = torch.empty(0)  # Node features
+        self.adj_matrix: torch.Tensor = torch.empty(0)  # Adjacency matrix
+        self.edge_features: torch.Tensor or None = None   # Edge features
 
-        self.solutions = None   # Current solutions
-        self.mask = None
-        self.is_complete = None
+        self.solutions: torch.Tensor = torch.empty(0)  # Current solutions
+        self.mask: torch.Tensor = torch.empty(0)  # Mask to avoid selecting certain actions
+        self.is_complete: bool = False  # Is the solution complete?
 
-        self.seed = None
-        self.device = None
+        self.seed: int or None = None  # Seed for reproducibility
+        self.device: str or torch.device = torch.device('cpu')  # Device
 
 
 class Problem(ABC):
     def __init__(self, device: str or torch.device):
-        #self.data_loader = data_loader
+        """
+        Abstract class for the problem definition.
+        :param device: str or torch.device: Device to use for computations.
+        """
         self.device = torch.device(device)
 
     @abstractmethod
-    def generate_state(self, batch_size: int, problem_size: int or list, seed=None) -> State:
+    def generate_state(self, batch_size: int, problem_size: int or list, seed: int or None = None) -> State:
         """
-        Generate a batch of states for the problem.
+        Generate a batch of states for the problem. Follows the following steps:
         1 - Generate new graphs
         2 - Initialize the solution
         3 - Compute the initial objective value
         4 - Update state with features
         5 - Initialize mask
 
-        Returns:
-        - A state class with features representing the problem instance: node_features, edge_features, solution, mask...
+        :param batch_size: int: Number of instances in the batch.
+        :param problem_size: int or list: Size of the problem (number of nodes).
+        :param seed: int or None: Seed for reproducibility.
+        :return: State: A state class with features representing the problem instance.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def update_state(self, state: State, action: torch.Tensor) -> Tuple[State, float]:
+    def update_state(self, state: State, action: torch.Tensor) -> (State, torch.Tensor):
         """
-        Update the state with the given action.
+        Update the state with the given action. Follows the following steps:
         1 - Apply the action to the environment: update the solution
-        2/3 - Compute the objective value
-        2/3 - Check completeness
+        2 or 3 - Compute the objective value
+        2 or 3 - Check completeness
         4 - Update mask
         5 - Update features with new solution
-        Returns:
-        - A state class with updated features.
+
+        :param state: State: The current state of the environment.
+        :param action: torch.Tensor: The action to apply to the environment.
+        :return: (State, torch.Tensor): A state class with updated features and the objective value.
         """
         raise NotImplementedError
 
@@ -97,7 +104,7 @@ class Problem(ABC):
 
 
 class ConstructiveProblem(Problem):
-    def generate_state(self, problem_size, batch_size, seed=None):
+    def generate_state(self, problem_size: int, batch_size: int, seed: int or None = None) -> (State, torch.Tensor):
         """
         Generate a batch of states for the problem.
 
@@ -113,7 +120,7 @@ class ConstructiveProblem(Problem):
         state = self._init_solutions(state)
 
         # 3- Compute the initial objective value: in constructive frameworks, the objective value is typically computed at the end
-        obj_value = 0
+        obj_value = torch.zeros(1, device=state.device)
 
         # 4 - Update state with features
         state = self._init_features(state)

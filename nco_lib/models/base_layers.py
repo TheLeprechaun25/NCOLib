@@ -1,10 +1,17 @@
 import torch
 import torch.nn as nn
-from abc import ABC, abstractmethod
 
 
 class MLP(nn.Module):
-    def __init__(self, hidden_dim, mult_hidden, activation, dropout, bias):
+    def __init__(self, hidden_dim: int, mult_hidden: int, activation: str, dropout: float, bias: bool):
+        """
+        Default Multi-Layer Perceptron class with two linear layers, an activation function and dropout.
+        :param hidden_dim: int: The input dimension of the MLP.
+        :param mult_hidden: int: The multiplier for the hidden dimension of the first linear layer.
+        :param activation: str: The activation function to use.
+        :param dropout: float: The dropout rate.
+        :param bias: bool: Whether to use bias in the linear layers.
+        """
         super().__init__()
         self.c_fc = nn.Linear(hidden_dim, mult_hidden * hidden_dim, bias=bias)
         self.c_proj = nn.Linear(mult_hidden * hidden_dim, hidden_dim, bias=bias)
@@ -20,17 +27,20 @@ class MLP(nn.Module):
 
 
 class Norm(nn.Module):
-    def __init__(self, hidden_dim, normalization):
+    def __init__(self, hidden_dim: int, normalization: str):
+        """
+        Default normalization class.
+        :param hidden_dim: int: The input dimension of the normalization.
+        :param normalization: str: The normalization to use.
+        """
         super().__init__()
         self.normalization = normalization
 
-        if self.normalization == 'layer':
+        if normalization == 'layer':
             self.norm = nn.LayerNorm(hidden_dim)
-        elif self.normalization == 'batch':
+        elif normalization == 'batch':
             self.norm = nn.BatchNorm1d(hidden_dim, affine=True, track_running_stats=False)
-        elif self.normalization == 'rms':
-            self.norm = RMSNorm(hidden_dim)
-        elif self.normalization == 'instance':
+        elif normalization == 'instance':
             self.norm = nn.InstanceNorm1d(hidden_dim, affine=True, track_running_stats=False)
         else:
             raise NotImplementedError
@@ -45,28 +55,12 @@ class Norm(nn.Module):
         return x
 
 
-def rms_norm(x, weight=None, eps=1e-05):
-    output = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps)
-    if weight is not None:
-        return output * weight
-    return output
-
-
-class RMSNorm(nn.Module):
-    def __init__(self, normalized_shape, eps=1e-05, weight=True, dtype=None, device=None):
-        super().__init__()
-        self.eps = eps
-        if weight:
-            self.weight = nn.Parameter(torch.ones(normalized_shape, dtype=dtype, device=device))
-        else:
-            self.register_parameter('weight', None)
-
-    def forward(self, x):
-        return rms_norm(x.float(), self.weight, self.eps).to(dtype=x.dtype)
-
-
 class Activation(nn.Module):
     def __init__(self, activation):
+        """
+        Default activation function class.
+        :param activation: str: The activation function to use.
+        """
         super().__init__()
         if activation == 'relu':
             self.act = nn.ReLU()
