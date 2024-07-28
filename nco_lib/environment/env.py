@@ -1,6 +1,9 @@
 import torch
+from typing import Tuple
+from copy import deepcopy
 from abc import ABC, abstractmethod
 from nco_lib.environment.problem_def import Problem, State
+from nco_lib.data.data_loader import DataLoader
 
 
 class Reward(ABC):
@@ -173,12 +176,14 @@ class ImprovementStoppingCriteria(StoppingCriteria):
 
 
 class Env(ABC):
-    def __init__(self, problem: Problem, reward: Reward, stopping_criteria: StoppingCriteria, device: torch.device or str = 'cpu'):
+    def __init__(self, problem: Problem, reward: Reward, stopping_criteria: StoppingCriteria,
+                 data_loader: DataLoader or None = None, device: torch.device or str = 'cpu'):
         """
         Initialize the NCO environment.
         :param problem: The problem definition. Type: Problem.
         :param reward: The reward function. Type: Reward.
         :param stopping_criteria: The stopping criteria. Type: StoppingCriteria.
+        :param data_loader: The dataset loader class. Type: DataLoader
         :param device: The device to use for computations. Type: str.
         """
         self.problem = problem
@@ -187,19 +192,50 @@ class Env(ABC):
         self.device = device
 
         self.state: State or None = None  # The current state of the environment
-        self.iteration: int = 0  # The current iteration
-        self.batch_range: torch.Tensor or None = None  # The range of batch sizes
 
-    def reset(self, problem_size: int, batch_size: int, seed: int or None = None) -> (State, torch.Tensor, torch.Tensor, bool):
+        self.data_loader: DataLoader or None = data_loader  # The dataset loader used to train.
+        if data_loader is not None:
+            self.data_loader.load_data()  # Load the dataset
+
+        self.iteration: int = 0  # The current iteration
+
+    def set(self, state: State, obj_value: torch.Tensor):
+        """
+        Set the environment to a specific state.
+        :param state: The state of the environment. Type: State.
+        :param obj_value: The objective value of the state. Type: torch.Tensor.
+        """
+        self.state = deepcopy(state)
+
+        reward = self.reward.reset(obj_value)
+
+        # Reset the stopping criteria
+        self.stopping_criteria.reset()
+
+        return self.state, reward, obj_value, False
+
+
+    def reset(self, problem_size: int or range, batch_size: int, pomo_size: int, seed: int or None = None) -> (State, torch.Tensor, torch.Tensor, bool):
         """
         Reset the environment to an initial state and return it.
-        :param problem_size: The size of the problem (number of nodes). Type: int.
+        :param problem_size: The size of the problem (number of nodes) or a range of problem sizes. Type: int or range.
         :param batch_size: The number of instances in the batch. Type: int.
+        :param pomo_size: Number of parallel initializations (Policy Optimization with Multiple Optima). Type: int.
         :param seed: The seed for reproducibility. Type: int or None.
         :return: The initial state, reward, and a boolean indicating if the episode has ended.
         """
+        # Set the current problem size
+        assert isinstance(problem_size, int) or isinstance(problem_size, range), "Problem size must be an integer or a range."
+        cur_problem_size = problem_size if isinstance(problem_size, int) else torch.randint(low=problem_size.start, high=problem_size.stop, size=(1,)).item()
+
         # Generate the initial state
-        self.state, obj_value = self.problem.generate_state(problem_size=problem_size, batch_size=batch_size, seed=seed)
+        self.state, obj_value = self.problem.generate_state(problem_size=cur_problem_size, batch_size=batch_size,
+                                                            pomo_size=pomo_size, seed=seed)
+
+        # Check whether the DataLoader will be used
+        if self.data_loader is not None:
+            # Generate a batch from the dataset
+            self.state.data['loaded_data'] = self.data_loader.generate_batch(batch_size=batch_size)
 
         # Calculate the reward
         reward = self.reward.reset(obj_value)
@@ -209,10 +245,10 @@ class Env(ABC):
 
         return self.state, reward, obj_value, False
 
-    def step(self, action: torch.Tensor) -> (State, torch.Tensor, torch.Tensor, bool):
+    def step(self, action: Tuple[torch.Tensor, torch.Tensor]) -> (State, torch.Tensor, torch.Tensor, bool):
         """
         Apply an action in the environment, modifying its state.
-        :param action: The action to apply to the environment. Type: torch.Tensor.
+        :param action: The action to apply to the environment in a tuple (selected node/edge, selected class). Type: Tuple[torch.Tensor, torch.Tensor].
         :return: The new state, reward, and a boolean indicating if the episode has ended.
         """
         # Update state with the action

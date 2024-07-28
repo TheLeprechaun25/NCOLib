@@ -4,11 +4,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from abc import abstractmethod
 from .base_layers import MLP, Norm
+from .decoders import DECODER_DICT
 
 
-class BaseGTLayer(nn.Module):
+class BaseGTEncoderLayer(nn.Module):
     def __init__(self, hidden_dim: int, mult_hidden: int, n_heads: int, dropout: float, activation: str,
-                 normalization: str, bias: bool = False):
+                 normalization: str, bias: bool = False, aux_node: bool = False):
         """
         Base Graph Transformer layer class.
         :param hidden_dim: int: The input dimension of the layer.
@@ -17,12 +18,15 @@ class BaseGTLayer(nn.Module):
         :param dropout: float: The dropout rate.
         :param activation: str: The activation function to use in the MLP.
         :param normalization: str: The normalization to use.
+        :param bias: bool: Whether to use bias in the linear layers.
+        :param aux_node: bool: Whether to use an auxiliary (also known as virtual) node.
         """
-        super(BaseGTLayer, self).__init__()
+        super(BaseGTEncoderLayer, self).__init__()
         self.hidden_dim = hidden_dim
         self.n_heads = n_heads
         self.head_dim = hidden_dim // n_heads
         self.dropout = dropout
+        self.aux_node = aux_node
 
         self.norm1 = Norm(hidden_dim=hidden_dim, normalization=normalization)
         self.norm2 = Norm(hidden_dim=hidden_dim, normalization=normalization)
@@ -32,10 +36,10 @@ class BaseGTLayer(nn.Module):
         raise NotImplementedError("Forward method not implemented")
 
 
-class GTLayer(BaseGTLayer):
+class GTEncoderLayer(BaseGTEncoderLayer):
     def __init__(self, hidden_dim: int, mult_hidden: int, n_heads: int, dropout: float, activation: str,
                  normalization: str, bias: bool = False):
-        super(GTLayer, self).__init__(hidden_dim, mult_hidden, n_heads, dropout, activation, normalization, bias)
+        super(GTEncoderLayer, self).__init__(hidden_dim, mult_hidden, n_heads, dropout, activation, normalization, bias)
         self.W_h = nn.Linear(hidden_dim, 3 * hidden_dim, bias=bias)  # Linear transformation for q, k, v
 
     def forward(self, h):
@@ -68,10 +72,11 @@ class GTLayer(BaseGTLayer):
         return out + y
 
 
-class EdgeGTLayer(BaseGTLayer):
+class EdgeGTEncoderLayer(BaseGTEncoderLayer):
     def __init__(self, hidden_dim: int, mult_hidden: int, n_heads: int, dropout: float, activation: str,
                  normalization: str, bias: bool = False):
-        super(EdgeGTLayer, self).__init__(hidden_dim, mult_hidden, n_heads, dropout, activation, normalization, bias)
+        super(EdgeGTEncoderLayer, self).__init__(hidden_dim, mult_hidden, n_heads, dropout, activation, normalization,
+                                                 bias)
         self.W_h = nn.Linear(hidden_dim, 3 * hidden_dim, bias=bias)  # Linear transformation for q, k, v
         self.W_e = nn.Linear(hidden_dim, 2 * n_heads, bias=bias)  # Additional edge weights
 
@@ -114,11 +119,16 @@ class EdgeGTLayer(BaseGTLayer):
 
 
 class BaseGTModel(nn.Module):
-    def __init__(self):
+    def __init__(self, out_dim: int, hidden_dim: int, logit_clipping: float):
         """
         Base Graph Transformer model class.
         """
         super(BaseGTModel, self).__init__()
+        self.out_dim = out_dim
+        self.sqrt_embedding_dim = math.sqrt(hidden_dim)
+
+        self.clip_logits = logit_clipping > 0.0
+        self.logit_clipping = logit_clipping
 
     @abstractmethod
     def forward(self, *inputs):
@@ -126,83 +136,149 @@ class BaseGTModel(nn.Module):
 
 
 class GTModel(BaseGTModel):
-    def __init__(self, node_in_dim: int, node_out_dim: int = 1, hidden_dim: int = 128, n_layers: int = 3,
+    def __init__(self, node_in_dim: int, node_out_dim: int = 1, decoder: str = 'linear', hidden_dim: int = 128, n_encoder_layers: int = 3,
                  mult_hidden: int = 4, n_heads: int = 8, dropout: float = 0.0, activation: str = 'relu',
-                 normalization: str = 'layer', bias: bool = False):
+                 normalization: str = 'layer', bias: bool = False, aux_node: bool = False, logit_clipping: float = 0.0):
         """
         Node-based featured Graph Transformer model class with node-based action outputs.
 
         :param node_in_dim: int: The input dimension of the node features.
         :param node_out_dim: int: The output dimension of the node-based action logits.
+        :param decoder: str: The decoder to use. Options: 'linear', 'attention'.
         :param hidden_dim: int: The hidden dimension of the model.
-        :param n_layers: int: The number of layers in the model.
+        :param n_encoder_layers: int: The number of layers in the model.
         :param mult_hidden: int: The multiplier for the hidden dimension of the MLP.
         :param n_heads: int: The number of attention heads.
         :param dropout: float: The dropout rate.
         :param activation: str: The activation function to use in the MLP.
         :param normalization: str: The normalization to use.
         :param bias: bool: Whether to use bias in the linear layers.
+        :param aux_node: bool: Whether to use an auxiliary (also known as virtual) node.
+        :param logit_clipping: float: The logit clipping value. 0.0 means no clipping. 10.0 is a commonly used value.
         """
-        super(GTModel, self).__init__()
+        super(GTModel, self).__init__(out_dim=node_out_dim, hidden_dim=hidden_dim, logit_clipping=logit_clipping)
+
+        self.aux_node = aux_node
+        if aux_node:
+            self.virtual_nodes = nn.Parameter(torch.randn(node_out_dim, hidden_dim))
+
         self.in_projection = nn.Linear(node_in_dim, hidden_dim, bias=bias)
-        self.layers = nn.ModuleList([GTLayer(hidden_dim, mult_hidden, n_heads, dropout, activation, normalization, bias)
-                                     for _ in range(n_layers)])
-        self.out_projection = nn.Linear(hidden_dim, node_out_dim, bias=bias)
+        self.encoder_layers = nn.ModuleList([GTEncoderLayer(hidden_dim, mult_hidden, n_heads, dropout, activation,
+                                                            normalization, bias) for _ in range(n_encoder_layers)])
+
+        assert decoder in DECODER_DICT.keys(), f"Decoder must be one of {DECODER_DICT.keys()}"
+        self.decoder = DECODER_DICT[decoder](hidden_dim, node_out_dim, n_heads, aux_node, bias=bias)
 
     def forward(self, state):
-        # Initial projection from node features to node embeddings
-        h = self.in_projection(state.node_features)
+        """
+        Forward pass for the GTModel.
+        :param state: State: The state of the environment.
+        """
 
-        # Pass through the layers
-        for layer in self.layers:
+        # Reshape the node features to (batch_size * pomo_size, n_nodes, features)
+        node_features = state.node_features.clone().view(-1, state.node_features.size(2), state.node_features.size(3))
+
+        # Initial projection from node features to node embeddings
+        h = self.in_projection(node_features)
+
+        if self.aux_node:
+            # Append virtual node
+            virtual_node_features = self.virtual_nodes.unsqueeze(0).repeat(h.size(0), 1, 1)
+
+            h = torch.cat([h, virtual_node_features], dim=1)
+
+        # Pass through the encoding layers
+        for layer in self.encoder_layers:
             h = layer(h)
 
-        # Final projection to node-based action logits
-        return self.out_projection(h)
+        # Decode to node-based action logits
+        out, aux_node = self.decoder(h)
+
+        if self.clip_logits:
+            out = out / self.sqrt_embedding_dim
+            out = self.logit_clipping * torch.tanh(out)
+
+        return out, aux_node
 
 
 class EdgeInGTModel(BaseGTModel):
-    def __init__(self, node_in_dim: int, edge_in_dim: int, node_out_dim: int = 1, hidden_dim: int = 128,
-                 n_layers: int = 3, mult_hidden: int = 4, n_heads: int = 8, dropout: float = 0.0,
-                 activation: str = 'relu', normalization: str = 'layer', bias: bool = False):
+    def __init__(self, node_in_dim: int, edge_in_dim: int, node_out_dim: int = 1, decoder: str = 'linear',
+                 hidden_dim: int = 128, n_encoder_layers: int = 3, mult_hidden: int = 4, n_heads: int = 8,
+                 dropout: float = 0.0, activation: str = 'relu', normalization: str = 'layer', bias: bool = False,
+                 aux_node: bool = False, logit_clipping: float = 0.0):
         """
         Node- and Edge-based featured Graph Transformer model class with node-based action outputs.
 
         :param node_in_dim: int: The input dimension of the node features.
         :param edge_in_dim: int: The input dimension of the edge features.
         :param node_out_dim: int: The output dimension of the node-based action logits.
+        :param decoder: str: The decoder to use. Options: 'linear', 'attention'.
         :param hidden_dim: int: The hidden dimension of the model.
-        :param n_layers: int: The number of layers in the model.
+        :param n_encoder_layers: int: The number of layers in the model.
         :param mult_hidden: int: The multiplier for the hidden dimension of the MLP.
         :param n_heads: int: The number of attention heads.
         :param dropout: float: The dropout rate.
         :param activation: str: The activation function to use in the MLP.
         :param normalization: str: The normalization to use.
         :param bias: bool: Whether to use bias in the linear layers.
+        :param aux_node: bool: Whether to use an auxiliary (also known as virtual) node.
+        :param logit_clipping: float: The logit clipping value. 0.0 means no clipping. 10.0 is a commonly used value.
         """
-        super(EdgeInGTModel, self).__init__()
+        super(EdgeInGTModel, self).__init__(out_dim=node_out_dim, hidden_dim=hidden_dim, logit_clipping=logit_clipping)
+        self.node_out_dim = node_out_dim
+        self.edge_in_dim = edge_in_dim
+
+        self.aux_node = aux_node
+        if aux_node:
+            self.virtual_nodes = nn.Parameter(torch.randn(1, hidden_dim))
+
         self.in_node_projection = nn.Linear(node_in_dim, hidden_dim, bias=bias)
         self.in_edge_projection = nn.Linear(edge_in_dim, hidden_dim, bias=bias)
-        self.layers = nn.ModuleList([EdgeGTLayer(hidden_dim, mult_hidden, n_heads, dropout, activation, normalization, bias)
-                                     for _ in range(n_layers)])
-        self.out_projection = nn.Linear(hidden_dim, node_out_dim, bias=bias)
+        self.encoder_layers = nn.ModuleList([EdgeGTEncoderLayer(hidden_dim, mult_hidden, n_heads, dropout, activation, normalization, bias)
+                                            for _ in range(n_encoder_layers)])
+
+        assert decoder in DECODER_DICT.keys(), f"Decoder must be one of {DECODER_DICT.keys()}"
+        self.decoder = DECODER_DICT[decoder](hidden_dim, node_out_dim, n_heads, aux_node, bias=bias)
 
     def forward(self, state):
+        # Reshape the node features to (batch_size * pomo_size, n_nodes, features)
+        node_features = state.node_features.clone().view(state.batch_size*state.pomo_size, state.problem_size, -1)
+
         # Initial projection from node features to node embeddings
-        h = self.in_node_projection(state.node_features)
+        h = self.in_node_projection(node_features)
+
+        # Edge features
+        edge_feat = state.edge_features.clone().view(state.batch_size*state.pomo_size, state.problem_size, state.problem_size, -1)
+        if self.aux_node:
+            # Append virtual node
+            virtual_node_features = self.virtual_nodes.unsqueeze(0).repeat(h.size(0), 1, 1)
+            h = torch.cat([h, virtual_node_features], dim=1)
+
+            # Update adjacency matrix for virtual node
+
+            virtual_edges = torch.ones(state.batch_size*state.pomo_size, 1, state.problem_size, self.edge_in_dim,  dtype=torch.long, device=state.device)
+            edge_feat = torch.cat([edge_feat, virtual_edges], dim=1)
+            virtual_edges_t = torch.ones(state.batch_size*state.pomo_size, state.problem_size + 1, 1, self.edge_in_dim, dtype=torch.long, device=state.device)
+            edge_feat = torch.cat([edge_feat, virtual_edges_t], dim=2)
 
         # Initial projection from edge features to edge embeddings
-        e = self.in_edge_projection(state.edge_features)
+        e = self.in_edge_projection(edge_feat)
 
         # Pass through the layers
-        for layer in self.layers:
+        for layer in self.encoder_layers:
             h = layer(h, e)
 
-        # Final projection to node-based action logits
-        return self.out_projection(h)
+        # Decode to node-based action logits
+        out, aux_node = self.decoder(h)
+
+        if self.clip_logits:
+            out = out / self.sqrt_embedding_dim
+            out = self.logit_clipping * torch.tanh(out)
+
+        return out, aux_node
 
 
-class EdgeOutGTModel(BaseGTModel):
+'''class EdgeOutGTModel(BaseGTModel):
     def __init__(self, node_in_dim: int, edge_out_dim: int = 1, hidden_dim: int = 128, n_layers: int = 3,
                  mult_hidden: int = 4, n_heads: int = 8, dropout: float = 0.0, activation: str = 'relu',
                  normalization: str = 'layer', bias: bool = False):
@@ -222,49 +298,7 @@ class EdgeOutGTModel(BaseGTModel):
         """
         super(EdgeOutGTModel, self).__init__()
         self.in_node_projection = nn.Linear(node_in_dim, hidden_dim, bias=bias)
-        self.layers = nn.ModuleList([EdgeGTLayer(hidden_dim, mult_hidden, n_heads, dropout, activation, normalization, bias)
-                                     for _ in range(n_layers)])
-        self.out_projection = nn.Linear(hidden_dim, edge_out_dim, bias=bias)
-
-    def forward(self, state):
-        # Initial projection from node features to node embeddings
-        h = self.in_node_projection(state.node_features)
-
-        # Pass through the layers
-        for layer in self.layers:
-            h = layer(h)
-
-        # Obtain edge embedding e_ij by concatenating h_i and h_j
-        e_out = torch.cat([h.unsqueeze(1).expand(-1, state.problem_size, -1, -1), h.unsqueeze(2).expand(-1, -1, state.problem_size, -1)], dim=-1)
-
-        # Final projection to edge-based action logits
-        logits = self.out_projection(e_out)
-        return logits.reshape(state.batch_size, state.problem_size*state.problem_size, -1)
-
-
-class EdgeInOutGTModel(BaseGTModel):
-    def __init__(self, node_in_dim: int, edge_in_dim: int, edge_out_dim: int = 1, hidden_dim: int = 128,
-                 n_layers: int = 3, mult_hidden: int = 4, n_heads: int = 8, dropout: float = 0.0,
-                 activation: str = 'relu', normalization: str = 'layer', bias: bool = False):
-        """
-        Node- and Edge-based Graph Transformer model class with edge-based action outputs.
-
-        :param node_in_dim: int: The input dimension of the node features.
-        :param edge_in_dim: int: The input dimension of the edge features.
-        :param edge_out_dim: int: The output dimension of the edge-based action logits.
-        :param hidden_dim: int: The hidden dimension of the model.
-        :param n_layers: int: The number of layers in the model.
-        :param mult_hidden: int: The multiplier for the hidden dimension of the MLP.
-        :param n_heads: int: The number of attention heads.
-        :param dropout: float: The dropout rate.
-        :param activation: str: The activation function to use in the MLP.
-        :param normalization: str: The normalization to use.
-        :param bias: bool: Whether to use bias in the linear layers.
-        """
-        super(EdgeInOutGTModel, self).__init__()
-        self.in_node_projection = nn.Linear(node_in_dim, hidden_dim, bias=bias)
-        self.in_edge_projection = nn.Linear(edge_in_dim, hidden_dim, bias=bias)
-        self.layers = nn.ModuleList([EdgeGTLayer(hidden_dim, mult_hidden, n_heads, dropout, activation, normalization, bias)
+        self.layers = nn.ModuleList([EdgeGTEncoderLayer(hidden_dim, mult_hidden, n_heads, dropout, activation, normalization, bias)
                                      for _ in range(n_layers)])
         self.out_projection = nn.Linear(2*hidden_dim, edge_out_dim, bias=bias)
 
@@ -272,16 +306,113 @@ class EdgeInOutGTModel(BaseGTModel):
         # Initial projection from node features to node embeddings
         h = self.in_node_projection(state.node_features)
 
-        # Initial projection from edge features to edge embeddings
-        e = self.in_edge_projection(state.edge_features)
+        if self.aux_node:
+            # Append virtual node
+            virtual_node_features = self.virtual_nodes.unsqueeze(0).repeat(h.size(0), 1, 1)
+            h = torch.cat([h, virtual_node_features], dim=1)
 
         # Pass through the layers
         for layer in self.layers:
-            h = layer(h, e)
+            h = layer(h)
 
-        # Obtain edge embedding e_ij by concatenating h_i and h_j
+        # Get edge embedding e_ij by concatenating h_i and h_j
         e_out = torch.cat([h.unsqueeze(1).expand(-1, state.problem_size, -1, -1), h.unsqueeze(2).expand(-1, -1, state.problem_size, -1)], dim=-1)
 
         # Final projection to edge-based action logits
         logits = self.out_projection(e_out)
         return logits.reshape(state.batch_size, state.problem_size*state.problem_size, -1)
+'''
+
+
+class EdgeInOutGTModel(BaseGTModel):
+    def __init__(self, node_in_dim: int, edge_in_dim: int, edge_out_dim: int = 1, decoder: str = 'linear',
+                 hidden_dim: int = 128, n_encoder_layers: int = 3, mult_hidden: int = 4, n_heads: int = 8,
+                 dropout: float = 0.0, activation: str = 'relu', normalization: str = 'layer', bias: bool = False,
+                 aux_node: bool = False, logit_clipping: float = 0.0):
+        """
+        Node- and Edge-based Graph Transformer model class with edge-based action outputs.
+
+        :param node_in_dim: int: The input dimension of the node features.
+        :param edge_in_dim: int: The input dimension of the edge features.
+        :param edge_out_dim: int: The output dimension of the edge-based action logits.
+        :param decoder: str: The decoder to use. Options: 'linear', 'attention'.
+        :param hidden_dim: int: The hidden dimension of the model.
+        :param n_encoder_layers: int: The number of layers in the model.
+        :param mult_hidden: int: The multiplier for the hidden dimension of the MLP.
+        :param n_heads: int: The number of attention heads.
+        :param dropout: float: The dropout rate.
+        :param activation: str: The activation function to use in the MLP.
+        :param normalization: str: The normalization to use.
+        :param bias: bool: Whether to use bias in the linear layers.
+        :param aux_node: bool: Whether to use an auxiliary (also known as virtual) node.
+        :param logit_clipping: float: The logit clipping value. 0.0 means no clipping. 10.0 is a commonly used value.
+        """
+        super(EdgeInOutGTModel, self).__init__(out_dim=edge_out_dim, hidden_dim=hidden_dim, logit_clipping=logit_clipping)
+
+        self.edge_out_dim = edge_out_dim
+        self.aux_node = aux_node
+        if aux_node:
+            self.virtual_nodes = nn.Parameter(torch.randn(edge_out_dim, hidden_dim))
+
+        self.in_node_projection = nn.Linear(node_in_dim, hidden_dim, bias=bias)
+        self.in_edge_projection = nn.Linear(edge_in_dim, hidden_dim, bias=bias)
+        self.encoder_layers = nn.ModuleList([EdgeGTEncoderLayer(hidden_dim, mult_hidden, n_heads, dropout, activation, normalization, bias)
+                                             for _ in range(n_encoder_layers)])
+        self.out_projection = nn.Linear(2*hidden_dim, edge_out_dim, bias=bias)
+        assert decoder in DECODER_DICT.keys(), f"Decoder must be one of {DECODER_DICT.keys()}"
+        if decoder in ['attention', 'linear']:
+            print('Attention and Linear decoders are not supported for EdgeInOutGTModel. Using edge decoder instead.')
+            decoder = 'edge'
+        self.decoder = DECODER_DICT[decoder](2*hidden_dim, edge_out_dim, n_heads, aux_node, bias=bias)
+
+
+    def forward(self, state):
+        # Reshape the node features to (batch_size * pomo_size, n_nodes, features)
+        node_features = state.node_features.clone().view(-1, state.node_features.size(2), state.node_features.size(3))
+
+        # Initial projection from node features to node embeddings
+        h = self.in_node_projection(node_features)
+
+        if self.aux_node:
+            # Append virtual node
+            virtual_node_features = self.virtual_nodes.unsqueeze(0).repeat(h.size(0), 1, 1)
+            h = torch.cat([h, virtual_node_features], dim=1)
+
+            # Update adjacency matrix for virtual node
+            edge_feat = state.edge_features.clone()
+            n_f = edge_feat.size(-1)
+            virtual_edges = torch.ones(state.batch_size, state.pomo_size, 1, state.problem_size, n_f, dtype=torch.long, device=state.device)
+            edge_feat = torch.cat([edge_feat, virtual_edges], dim=2)
+            virtual_edges_t = torch.ones(state.batch_size, state.pomo_size, state.problem_size + 1, 1, n_f, dtype=torch.long, device=state.device)
+            edge_feat = torch.cat([edge_feat, virtual_edges_t], dim=3)
+        else:
+            edge_feat = state.edge_features
+
+        edge_feat = edge_feat.view(-1, edge_feat.size(2), edge_feat.size(3), edge_feat.size(4))
+
+        # Initial projection from edge features to edge embeddings
+        e = self.in_edge_projection(edge_feat)
+
+        # Pass through the layers
+        for layer in self.encoder_layers:
+            h = layer(h, e)
+
+        if self.aux_node:
+            h, aux_node = h[:, :-1, :], h[:, -1:, :]
+        else:
+            aux_node = None
+
+        # Get edge embedding e_ij by concatenating h_i and h_j
+        e_out = torch.cat([h.unsqueeze(1).expand(-1, state.problem_size, -1, -1), h.unsqueeze(2).expand(-1, -1, state.problem_size, -1)], dim=-1)
+
+        # reshape e_out to (batch_size, n_edges, hidden_dim)
+        e_out = e_out.view(state.batch_size*state.pomo_size, -1, e_out.size(-1))
+
+        # Decode to edge-based action logits
+        out, _ = self.decoder(e_out)
+
+        if self.clip_logits:
+            out = out / self.sqrt_embedding_dim
+            out = self.logit_clipping * torch.tanh(out)
+
+        return out, aux_node

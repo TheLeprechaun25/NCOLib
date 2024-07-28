@@ -1,17 +1,35 @@
 # Neural Combinatorial Optimization Library (NCOLib)
 
 ## Introduction
-The Neural Combinatorial Optimization Library (NCOLib) is an accessible software library designed to simplify the application of neural network models and deep learning algorithms to solve combinatorial optimization problems. It brings the power of NCO closer to non-experts, including industry professionals and junior researchers.
+The Neural Combinatorial Optimization Library (NCOLib) is an accessible software library designed to simplify the application of neural network models and deep learning algorithms to approximately solve combinatorial optimization problems. It brings the power of NCO closer to industry professionals and researchers.
 
-## Installation
-Ensure that you have Python 3.8 or higher installed, along with pip. NCOLib requires PyTorch, which can be installed using the following command if not already installed:
+## Use
+### 1. Clone the repository
+```bash 
+git clone https://github.com/TheLeprechaun25/NCOLib.git
+cd NCOLib
+```
+
+### 2. Install the required package
 ```bash
 pip install torch
 ```
 
+### 3. Run one of the examples
+```bash
+python examples/tsp_constructive.py
+```
+
+### 4. Apply NCO to your specific problem
+In order to apply NCO to your specific problem, you need to define a **problem class**. The state is where all the problem information is stored, and later used in the model and in the environment to compute the objective value.
+
+For a hands-on introduction on how to apply, check out the [examples/](examples/) folder or the [basic_tour.ipynb](examples/basic_tour.ipynb) notebook.
+
+
 ## Features
-- **Model Training:** Train *neural constructive* and *neural improvement* models to tackle various optimization tasks.
+- **Model Training:** Train deep neural models to tackle combinatorial optimization problems.
 - **Inference Capabilities:** Deploy trained models to infer and solve optimization problems efficiently.
+- **Experimentation:** Experiment with different models, datasets, and hyperparameters to find the best solution.
 
 ### NCO Frameworks
 - **Neural Constructive:** Construct solutions from scratch, autoregressively.
@@ -21,11 +39,11 @@ pip install torch
 
 We use Graph Neural Networks (GNNs) to solve combinatorial optimization problems. Different GNN architectures can be used based on the input features (node-based, edge-based or node- and edge-based) and output actions (node-based or edge-based) at hand:
 
-| Input &darr; Output &rarr; | Node-based | Edge-based |
-|----------------------------|------------|------------|
-| **Node-based**             | GCN, GT    | EO_GT      |
-| **Edge-based**             | EI_GT      | EI_EO_GT   |
-| **Node & Edge-based**      | EI_GT      | EI_EO_GT   |
+| Input &darr; Output &rarr;     | Node-based actions | Edge-based actions |
+|--------------------------------|--------------------|--------------------|
+| **Node-based features**        | GCN, GT, eGNN      | EO_GT              |
+| **Edge-based features**        | EI_GT, eGNN        | EI_EO_GT           |
+| **Node & Edge-based features** | EI_GT, eGNN        | EI_EO_GT           |
 
 **Key:**
 - **GCN:** Graph Convolutional Network. GCNModel class.
@@ -46,31 +64,6 @@ We use Graph Neural Networks (GNNs) to solve combinatorial optimization problems
 
 **Supervised Learning:**
 Under development.
-
-## Getting Started
-### Basic Usage Example
-User needs to define a problem class. The state is where all the problem information is stored, and later used in the model and in the environment to compute the objective value.
-
-The state class has the following fixed attributes:
-- state.batch_size 
-- state.problem_size 
-- state.device 
-- state.seed 
-- state.node_features 
-- state.edge_features 
-- state.graph_features 
-- state.solutions 
-- state.mask
-- state.is_complete
-
-While the dynamic, problem-based and user-defined attributes are stored in the **state.data** dictionary. For example: 
-
-```python
-state.data.tsp_coordinates = torch.rand((state.batch_size, state.problem_size, 2), device=state.device)
-```
-
-
-For a hands-on introduction, check out [examples/basic_tour.ipynb](examples/basic_tour.ipynb), which explains the basic usage of the library.
 
 
 ## Project Structure
@@ -93,15 +86,19 @@ For a hands-on introduction, check out [examples/basic_tour.ipynb](examples/basi
 
 ## Roadmap
 
+### Done:
+- Add data augmentation (POMO).
+- Add graph-context via auxiliary or virtual node.
+- Add a decoder that uses attention to the graph-context.
+
+### To do:
 - Add other GNN architectures: GIS, GAT, etc.
 - Actor critic and PPO training.
 - Include datasets to be used as an alternative to random generators.
 - Add tests
-- Add more problems to tour: scheduling, assignment, etc.
-- Add graph-context as the used in POMO decoder.
-- Add data augmentation (POMO).
+- Add more problems to examples: scheduling, assignment, etc.
 - Add more evaluation metrics beside obj. value: convergence time and stability across different runs
-- Add memory-mechanism to env and model.
+- Add memory-mechanism to env and model (MARCO).
 - Add Non-Auto-regressive (heatmap) + search (subclass of Problem).
 
 

@@ -49,8 +49,8 @@ class GCNLayer(nn.Module):
             output = output + self.bias
 
         # Apply activation and dropout if needed
+        output = self.activation(output)
         if not last_layer:
-            output = self.activation(output)
             output = self.dropout(output)
 
         return output
@@ -83,11 +83,11 @@ class GCNModel(nn.Module):
         :param state: State: The state of the environment.
         """
         # Initial projection from node features to node embeddings
-        h = self.in_node_projection(state.node_features)
+        h = self.in_projection(state.node_features)
 
         # Perform the forward pass through all layers
         for idx, layer in enumerate(self.layers):
-            h = layer(h, state.adj_matrix)
+            h = layer(h, state.adj_matrix, last_layer=(idx == len(self.layers) - 1))
 
         # Final projection to the output action logits
         return self.out_projection(h)
