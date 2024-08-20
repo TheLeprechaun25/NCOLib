@@ -1,16 +1,21 @@
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath('.'))
+
 import random
 from typing import Tuple
 
 import torch
 import torch.nn.functional as F
 
-from models.gat import GATModel
 from nco_lib.environment.actions import two_opt, bit_flip
 from nco_lib.environment.env import State, Env, ConstructiveStoppingCriteria, ConstructiveReward, ImprovementReward, ImprovementStoppingCriteria
 from nco_lib.environment.problem_def import ConstructiveProblem, ImprovementProblem
 from nco_lib.models.graph_transformer import GTModel, EdgeInGTModel, EdgeInOutGTModel
 from nco_lib.data.data_loader import generate_random_graph
-from trainer.trainer import ConstructiveTrainer, ImprovementTrainer
+from nco_lib.trainer.trainer import ConstructiveTrainer, ImprovementTrainer
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # Set the seed for reproducibility
@@ -158,8 +163,8 @@ mis_problem = MISImprovementProblem(device=device)
 
 # Now, we define the environment for the MIS problem
 mis_env = Env(problem=mis_problem,
-              reward=ConstructiveReward(),
-              stopping_criteria=ImprovementStoppingCriteria(max_steps=20, patience=3),
+              reward=ImprovementReward(positive_only=True, normalize=False),
+              stopping_criteria=ImprovementStoppingCriteria(max_steps=20, patience=10),
               device=device)
 
 # Define the model based on edge features (adjacency matrix)
@@ -173,7 +178,7 @@ mis_trainer = ImprovementTrainer(model=mis_model,
                                  device=device)
 # %%
 # 3) Run training and inference for the Maximum Cut Problem (MC)
-mis_trainer.inference(problem_size=20, batch_size=100, pomo_size=3, deterministic=True, seed=42, verbose=True)
+mis_trainer.inference(problem_size=20, batch_size=100, pomo_size=1, deterministic=True, seed=42, verbose=True)
 mis_trainer.train(epochs=10, episodes=10, problem_size=20, batch_size=32, pomo_size=1, eval_problem_size=20,
-                  eval_batch_size=256, baseline_type='pomo', save_freq=10, save_path='', seed=42, verbose=True)
-mis_trainer.inference(problem_size=20, batch_size=100, pomo_size=3, deterministic=True, seed=42, verbose=True)
+                  eval_batch_size=256, baseline_type='mean', save_freq=10, save_path='', seed=42, verbose=True)
+mis_trainer.inference(problem_size=20, batch_size=100, pomo_size=1, deterministic=True, seed=42, verbose=True)

@@ -93,9 +93,10 @@ Under development.
 
 ### To do:
 - Add other GNN architectures: GIS, GAT, etc.
+- In Constructive method, deal with the case in which each instance in the batch gets completed in different iterations.
 - Actor critic and PPO training.
 - Include datasets to be used as an alternative to random generators.
-- Add tests
+- Add tests: check the validity of created solutions and features in user defined functions
 - Add more problems to examples: scheduling, assignment, etc.
 - Add more evaluation metrics beside obj. value: convergence time and stability across different runs
 - Add memory-mechanism to env and model (MARCO).

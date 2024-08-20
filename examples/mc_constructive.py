@@ -1,16 +1,20 @@
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath('.'))
+
 import random
 from typing import Tuple
 
 import torch
 import torch.nn.functional as F
 
-from models.gat import GATModel
-from nco_lib.environment.actions import two_opt, bit_flip
 from nco_lib.environment.env import State, Env, ConstructiveStoppingCriteria, ConstructiveReward, ImprovementReward, ImprovementStoppingCriteria
 from nco_lib.environment.problem_def import ConstructiveProblem, ImprovementProblem
 from nco_lib.models.graph_transformer import GTModel, EdgeInGTModel, EdgeInOutGTModel
 from nco_lib.data.data_loader import generate_random_graph
-from trainer.trainer import ConstructiveTrainer, ImprovementTrainer
+from nco_lib.trainer.trainer import ConstructiveTrainer, ImprovementTrainer
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # Set the seed for reproducibility

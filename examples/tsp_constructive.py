@@ -1,12 +1,16 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath('.'))
+
 import random
 from typing import Tuple
 
 import torch
-
 from nco_lib.environment.env import State, Env, ConstructiveStoppingCriteria, ConstructiveReward
 from nco_lib.environment.problem_def import ConstructiveProblem
 from nco_lib.models.graph_transformer import GTModel
-from trainer.trainer import ConstructiveTrainer
+from nco_lib.trainer.trainer import ConstructiveTrainer
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # Set the seed for reproducibility

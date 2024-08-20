@@ -386,7 +386,7 @@ class EdgeInOutGTModel(BaseGTModel):
             virtual_edges_t = torch.ones(state.batch_size, state.pomo_size, state.problem_size + 1, 1, n_f, dtype=torch.long, device=state.device)
             edge_feat = torch.cat([edge_feat, virtual_edges_t], dim=3)
         else:
-            edge_feat = state.edge_features
+            edge_feat = state.edge_features.clone()
 
         edge_feat = edge_feat.view(-1, edge_feat.size(2), edge_feat.size(3), edge_feat.size(4))
 

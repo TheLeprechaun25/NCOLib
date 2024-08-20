@@ -5,8 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from environment.env import Env
-from environment.problem_def import State
+from nco_lib.environment.env import Env
+from nco_lib.environment.problem_def import State
 
 
 class Trainer(ABC):
