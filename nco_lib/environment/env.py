@@ -2,7 +2,9 @@ import torch
 from typing import Tuple
 from copy import deepcopy
 from abc import ABC, abstractmethod
+
 from nco_lib.environment.problem_def import Problem, State
+from nco_lib.environment.memory import Memory, NoMemory, MarcoMemory, LastActionMemory
 from nco_lib.data.data_loader import DataLoader
 
 
@@ -40,6 +42,7 @@ class ConstructiveReward(Reward):
         :param obj_value: The objective value of the current state. Type: torch.Tensor.
         :return: The reward of the current state. Type: torch.Tensor.
         """
+
         if self.normalize:
             return obj_value/state.problem_size
         else:
@@ -177,18 +180,20 @@ class ImprovementStoppingCriteria(StoppingCriteria):
 
 class Env(ABC):
     def __init__(self, problem: Problem, reward: Reward, stopping_criteria: StoppingCriteria,
-                 data_loader: DataLoader or None = None, device: torch.device or str = 'cpu'):
+                 memory: Memory = None, data_loader: DataLoader or None = None, device: torch.device or str = 'cpu'):
         """
         Initialize the NCO environment.
         :param problem: The problem definition. Type: Problem.
         :param reward: The reward function. Type: Reward.
         :param stopping_criteria: The stopping criteria. Type: StoppingCriteria.
-        :param data_loader: The dataset loader class. Type: DataLoader
+        :param memory: The memory to use for the environment. Type: Memory.
+        :param data_loader: The dataset loader class. Type: DataLoader.
         :param device: The device to use for computations. Type: str.
         """
         self.problem = problem
         self.reward = reward
         self.stopping_criteria = stopping_criteria
+        self.memory = memory
         self.device = device
 
         self.state: State or None = None  # The current state of the environment
@@ -198,6 +203,16 @@ class Env(ABC):
             self.data_loader.load_data()  # Load the dataset
 
         self.iteration: int = 0  # The current iteration
+
+        if memory is None or isinstance(memory, NoMemory):
+            self.memory = NoMemory() # If no memory is provided, use NoMemory
+            self.mem_dim = 0
+        elif isinstance(memory, LastActionMemory):
+            self.mem_dim = 1
+        elif isinstance(memory, MarcoMemory):
+            self.mem_dim = 2
+        else:
+            raise ValueError("Memory type not recognized: {}".format(memory))
 
     def set(self, state: State, obj_value: torch.Tensor):
         """
@@ -232,6 +247,13 @@ class Env(ABC):
         self.state, obj_value = self.problem.generate_state(problem_size=cur_problem_size, batch_size=batch_size,
                                                             pomo_size=pomo_size, seed=seed)
 
+        # add the memory information to the state
+        if isinstance(self.memory, NoMemory):
+            self.state.memory_info = None
+        else:
+            # add a dummy tensor to keep the dimensions
+            self.state.memory_info = torch.zeros((batch_size, pomo_size, cur_problem_size, self.mem_dim))
+
         # Check whether the DataLoader will be used
         if self.data_loader is not None:
             # Generate a batch from the dataset
@@ -239,6 +261,9 @@ class Env(ABC):
 
         # Calculate the reward
         reward = self.reward.reset(obj_value)
+
+        # Empty the memory
+        self.memory.clear_memory()
 
         # Reset the stopping criteria
         self.stopping_criteria.reset()
@@ -251,13 +276,27 @@ class Env(ABC):
         :param action: The action to apply to the environment in a tuple (selected node/edge, selected class). Type: Tuple[torch.Tensor, torch.Tensor].
         :return: The new state, reward, and a boolean indicating if the episode has ended.
         """
+        # Store the previous state and the performed action in memory
+        self.memory.save_in_memory(state=self.state, action=action)
+
         # Update state with the action
         self.state, obj_value = self.problem.update_state(self.state, action)
+
+        # Gather the information from memory. K-nearest neighbors of current solutions
+        self.state.memory_info, revisited, avg_sim, max_sim = self.memory.get_knn(self.state, k=self.memory.k)
 
         # Calculate the reward
         reward = self.reward.step(self.state, obj_value)
 
+        # Update the reward with revisiting punishments if revisited is not None (only when using memory)
+        if revisited is not None:
+            revisited_idx = revisited != 0
+            reward[revisited_idx] -= self.memory.repeat_punishment * revisited[revisited_idx]
+
         # Check if the episode has ended
         done = self.stopping_criteria.step(self.state, obj_value)
+
+        # Store the action in state
+        self.state.last_action = action
 
         return self.state, reward, obj_value, done

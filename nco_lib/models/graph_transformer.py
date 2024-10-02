@@ -157,6 +157,8 @@ class GTModel(BaseGTModel):
         :param logit_clipping: float: The logit clipping value. 0.0 means no clipping. 10.0 is a commonly used value.
         """
         super(GTModel, self).__init__(out_dim=node_out_dim, hidden_dim=hidden_dim, logit_clipping=logit_clipping)
+        self.node_in_dim = node_in_dim
+        self.node_out_dim = node_out_dim
 
         self.aux_node = aux_node
         if aux_node:
@@ -177,6 +179,11 @@ class GTModel(BaseGTModel):
 
         # Reshape the node features to (batch_size * pomo_size, n_nodes, features)
         node_features = state.node_features.clone().view(-1, state.node_features.size(2), state.node_features.size(3))
+
+        # Add memory information to node features
+        if state.memory_info is not None:
+            memory = state.memory_info.clone().view(state.batch_size*state.pomo_size, state.problem_size, -1)
+            node_features = torch.cat([node_features, memory], dim=-1)
 
         # Initial projection from node features to node embeddings
         h = self.in_projection(node_features)
@@ -225,6 +232,7 @@ class EdgeInGTModel(BaseGTModel):
         :param logit_clipping: float: The logit clipping value. 0.0 means no clipping. 10.0 is a commonly used value.
         """
         super(EdgeInGTModel, self).__init__(out_dim=node_out_dim, hidden_dim=hidden_dim, logit_clipping=logit_clipping)
+        self.node_in_dim = node_in_dim
         self.node_out_dim = node_out_dim
         self.edge_in_dim = edge_in_dim
 
@@ -243,6 +251,11 @@ class EdgeInGTModel(BaseGTModel):
     def forward(self, state):
         # Reshape the node features to (batch_size * pomo_size, n_nodes, features)
         node_features = state.node_features.clone().view(state.batch_size*state.pomo_size, state.problem_size, -1)
+
+        # Add memory information to node features
+        if state.memory_info is not None:
+            memory = state.memory_info.clone().view(state.batch_size*state.pomo_size, state.problem_size, -1)
+            node_features = torch.cat([node_features, memory], dim=-1)
 
         # Initial projection from node features to node embeddings
         h = self.in_node_projection(node_features)
@@ -348,7 +361,8 @@ class EdgeInOutGTModel(BaseGTModel):
         :param logit_clipping: float: The logit clipping value. 0.0 means no clipping. 10.0 is a commonly used value.
         """
         super(EdgeInOutGTModel, self).__init__(out_dim=edge_out_dim, hidden_dim=hidden_dim, logit_clipping=logit_clipping)
-
+        self.node_in_dim = node_in_dim
+        self.edge_in_dim = edge_in_dim
         self.edge_out_dim = edge_out_dim
         self.aux_node = aux_node
         if aux_node:
@@ -369,6 +383,11 @@ class EdgeInOutGTModel(BaseGTModel):
     def forward(self, state):
         # Reshape the node features to (batch_size * pomo_size, n_nodes, features)
         node_features = state.node_features.clone().view(-1, state.node_features.size(2), state.node_features.size(3))
+
+        # Add memory information to node features
+        if state.memory_info is not None:
+            memory = state.memory_info.clone().view(state.batch_size*state.pomo_size, state.problem_size, -1)
+            node_features = torch.cat([node_features, memory], dim=-1)
 
         # Initial projection from node features to node embeddings
         h = self.in_node_projection(node_features)

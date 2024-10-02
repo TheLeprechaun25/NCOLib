@@ -7,6 +7,8 @@ import torch.nn.functional as F
 
 from nco_lib.environment.env import Env
 from nco_lib.environment.problem_def import State
+from nco_lib.environment.memory import NoMemory
+
 
 
 class Trainer(ABC):
@@ -28,6 +30,15 @@ class Trainer(ABC):
         self.env = env
         self.optimizer = optimizer
         self.device = device
+
+        # Check node and edge dimensions are equal in the model and env.problem
+        # first check if the model has an attribute node_in_dim
+        if hasattr(self.model, 'node_in_dim'):
+            assert self.model.node_in_dim == self.env.problem.node_in_dim + self.env.mem_dim, "Node input dimensions do not match. Model: {}, Problem def: {}".format(self.model.node_in_dim, self.env.problem.node_in_dim)
+
+        if hasattr(self.model, 'edge_in_dim'):
+            assert self.model.edge_in_dim == self.env.problem.edge_in_dim, "Edge input dimensions do not match. Model: {}, Problem def: {}".format(self.model.edge_in_dim, self.env.problem.edge_in_dim)
+
 
     @abstractmethod
     def inference(self, **kwargs):
@@ -197,8 +208,7 @@ class ConstructiveTrainer(Trainer):
         :return: The result dictionary. Type: dict.
         """
         # Test the problem definition
-        test_problem_def(self.model, self.env, 20, 8, 1)
-        test_problem_def(self.model, self.env, 20, 8, 10)
+        test_problem_def(self.model, self.env, problem_size, batch_size, pomo_size)
 
         # Warnings
         if baseline_type == 'pomo' and pomo_size == 1:
@@ -506,8 +516,7 @@ class ImprovementTrainer(Trainer):
         :param verbose: If True, print the loss, objective value, and elapsed time. Type: bool.
         """
         # Test the problem definition
-        test_problem_def(self.model, self.env, 20, 8, 1)
-        test_problem_def(self.model, self.env, 20, 8, 10)
+        test_problem_def(self.model, self.env, problem_size, batch_size, pomo_size)
 
         # Start timer and result dictionary
         start_time = time.time()
@@ -594,7 +603,7 @@ class ImprovementTrainer(Trainer):
 
                         # Append log probabilities and rewards
                         log_probs.append(prob.log())
-                        rewards.append(reward)
+                        rewards.append(reward.reshape(batch_size*pomo_size))
 
                         if done:
                             break
