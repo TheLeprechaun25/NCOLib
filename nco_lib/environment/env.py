@@ -27,7 +27,7 @@ class Reward(ABC):
 
 
 class ConstructiveReward(Reward):
-    def __init__(self, normalize: bool = True):
+    def __init__(self, normalize: bool = False):
         """
         Constructive reward function. The reward is the objective value of the current state.
         :param normalize: If True, the reward is normalized by the problem size. Type: bool.
@@ -56,7 +56,7 @@ class ConstructiveReward(Reward):
 
 
 class ImprovementReward(Reward):
-    def __init__(self, positive_only: bool = True, normalize: bool = True):
+    def __init__(self, positive_only: bool = True, normalize: bool = False):
         """
         Improvement reward function. The reward is the difference between the current objective value and the previous one.
         :param positive_only: If True, the reward is clamped to zero if it is negative. Type: bool.

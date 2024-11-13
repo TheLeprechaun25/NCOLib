@@ -138,7 +138,7 @@ class BaseGTModel(nn.Module):
 class GTModel(BaseGTModel):
     def __init__(self, node_in_dim: int, node_out_dim: int = 1, decoder: str = 'linear', hidden_dim: int = 128, n_encoder_layers: int = 3,
                  mult_hidden: int = 4, n_heads: int = 8, dropout: float = 0.0, activation: str = 'relu',
-                 normalization: str = 'layer', bias: bool = False, aux_node: bool = False, logit_clipping: float = 0.0):
+                 normalization: str = 'layer', bias: bool = False, aux_node: bool = False, logit_clipping: float = 10.0):
         """
         Node-based featured Graph Transformer model class with node-based action outputs.
 
@@ -212,7 +212,7 @@ class EdgeInGTModel(BaseGTModel):
     def __init__(self, node_in_dim: int, edge_in_dim: int, node_out_dim: int = 1, decoder: str = 'linear',
                  hidden_dim: int = 128, n_encoder_layers: int = 3, mult_hidden: int = 4, n_heads: int = 8,
                  dropout: float = 0.0, activation: str = 'relu', normalization: str = 'layer', bias: bool = False,
-                 aux_node: bool = False, logit_clipping: float = 0.0):
+                 aux_node: bool = False, logit_clipping: float = 10.0):
         """
         Node- and Edge-based featured Graph Transformer model class with node-based action outputs.
 
@@ -341,7 +341,7 @@ class EdgeInOutGTModel(BaseGTModel):
     def __init__(self, node_in_dim: int, edge_in_dim: int, edge_out_dim: int = 1, decoder: str = 'linear',
                  hidden_dim: int = 128, n_encoder_layers: int = 3, mult_hidden: int = 4, n_heads: int = 8,
                  dropout: float = 0.0, activation: str = 'relu', normalization: str = 'layer', bias: bool = False,
-                 aux_node: bool = False, logit_clipping: float = 0.0):
+                 aux_node: bool = False, logit_clipping: float = 10.0):
         """
         Node- and Edge-based Graph Transformer model class with edge-based action outputs.
 

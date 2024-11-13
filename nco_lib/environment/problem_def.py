@@ -48,7 +48,8 @@ class Problem(ABC):
         aux_state = self._init_instances(aux_state)
         aux_state = self._init_solutions(aux_state)
         aux_state = self._init_features(aux_state)
-        self.node_in_dim, self.edge_in_dim = aux_state.node_features.size(-1), aux_state.edge_features.size(-1)
+        self.node_in_dim = 0 if aux_state.node_features is None else aux_state.node_features.size(-1)
+        self.edge_in_dim = 0 if aux_state.edge_features is None else aux_state.edge_features.size(-1)
 
     @abstractmethod
     def generate_state(self, batch_size: int, problem_size: int, pomo_size: int, seed: int or None = None) -> State:

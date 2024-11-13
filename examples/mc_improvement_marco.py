@@ -36,7 +36,7 @@ We will define the MC problem as an improvement problem, where in each step we w
 
 
 # %%
-# 1) Define the MIS improvement problem
+# 1) Define the MC improvement problem
 class MCImprovementProblem(ImprovementProblem):
     def _init_instances(self, state: State) -> State:
         """
@@ -56,7 +56,7 @@ class MCImprovementProblem(ImprovementProblem):
         Here the user can define the initialization of the solutions for the MC problem.
         In improvement methods, the solutions are generally initialized as complete solutions, and then improved.
 
-        For the MIS we will initialize the set of nodes greedily, by iteratively adding nodes that are not adjacent to the current set.
+        For the MC we will initialize the set of nodes greedily, by iteratively adding nodes that are not adjacent to the current set.
         """
 
         if state.seed is not None:
@@ -70,7 +70,7 @@ class MCImprovementProblem(ImprovementProblem):
         """
         Here the user can define the initialization of the node/edge features for the MIS problem.
 
-        For the MIS, we will use the current solutions as node features and the adjacency matrix as edge features.
+        For the MC, we will use the current solutions as node features and the adjacency matrix as edge features.
         """
         # Generate the node features, we will use the two states of the solutions as node features (in or out of the set)
         state.node_features = F.one_hot(state.solutions.long(), 2).float()
@@ -151,7 +151,7 @@ mc_memory = select_memory(memory_type=memory_type,
                           repeat_punishment=2.0,
                           device=device)
 
-# Now, we define the environment for the MIS problem
+# Now, we define the environment for the MC problem
 mc_env = Env(problem=mc_problem,
              reward=ImprovementReward(positive_only=True, normalize=False),
              stopping_criteria=ImprovementStoppingCriteria(max_steps=20, patience=20),
