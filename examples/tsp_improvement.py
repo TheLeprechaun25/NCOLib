@@ -209,7 +209,7 @@ tsp_trainer = ImprovementTrainer(model=tsp_model,
                                  device=device)
 # %%
 # 3) Run training and inference for the Traveling Salesman Problem
-train_results = tsp_trainer.train(epochs=10, episodes=100, problem_size=20, batch_size=64, pomo_size=1,
+train_results = tsp_trainer.train(epochs=1, episodes=100, problem_size=20, batch_size=64, pomo_size=1,
                                   eval_problem_size=20, eval_batch_size=256, baseline_type='mean', verbose=True)
 
-tsp_trainer.inference(problem_size=20, batch_size=100, pomo_size=1, deterministic=True, seed=42, verbose=True)
+inference_results = tsp_trainer.inference(problem_size=20, batch_size=100, pomo_size=1, deterministic=True, seed=42, verbose=True)

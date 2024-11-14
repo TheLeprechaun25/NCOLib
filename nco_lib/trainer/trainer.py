@@ -67,12 +67,14 @@ class Trainer(ABC):
         :param path: The path to save the model. Type: str.
         :param epoch: The epoch number. Type: int.
         """
-        model_path = path + 'model.pth'
+        if not path.endswith('.pth'):
+            path += '.pth'
+
         torch.save({
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
-        }, model_path)
+        }, path)
 
     def load_checkpoint(self, path: str) -> int:
         """
@@ -126,8 +128,11 @@ class ConstructiveTrainer(Trainer):
             'deterministic': deterministic,
             'seed': seed,
 
+            'final_obj_values': None,
+            'final_solutions': None,
             'obj_values': [],
-            'elapsed_times': []
+            'elapsed_times': [],
+            'logits': [],
         }
 
         # Set the model to evaluation mode
@@ -170,6 +175,7 @@ class ConstructiveTrainer(Trainer):
             # Store the results
             result_dict['obj_values'].append(obj_value.mean().item())
             result_dict['elapsed_times'].append(time.time() - start_time)
+            result_dict['logits'].append(logits)
 
         # Reshape the objective value
         obj_value = obj_value.reshape(batch_size, pomo_size)
@@ -177,13 +183,17 @@ class ConstructiveTrainer(Trainer):
         # End-of-inference
         elapsed_time = time.time() - start_time
 
+        # Store the final results
+        result_dict['final_obj_values'] = obj_value
+        result_dict['final_solutions'] = state.solutions
+
         if verbose:
             avg_objective_value = obj_value.mean().item()
             # max in dim 1 to get the best solution in each batch
             best_objective_value = obj_value.max(dim=1).values.mean().item()
             print(f"Avg Objective Value: {avg_objective_value:.4f}. Best Objective Value: {best_objective_value:.4f}. Elapsed Time: {elapsed_time:.2f} sec")
 
-        return obj_value, result_dict
+        return result_dict
 
     def train(self, epochs: int, episodes: int, problem_size: int or range, batch_size: int, pomo_size: int,
               eval_problem_size: int, eval_batch_size: int, baseline_type: str = 'mean', max_clip_norm: float = 1.0, eval_freq: int = 1,
@@ -423,10 +433,13 @@ class ImprovementTrainer(Trainer):
             'deterministic': deterministic,
             'seed': seed,
 
+            'final_obj_values': None,
+            'final_solutions': None,
             'avg_obj_values': [],
             'best_obj_values': [],
             'overall_best_obj_values': [],
             'elapsed_times': [],
+            'logits': [],
         }
 
         # Set the model to evaluation mode
@@ -480,12 +493,17 @@ class ImprovementTrainer(Trainer):
             result_dict['best_obj_values'].append(obj_value.max(dim=1).values.mean().item())
             result_dict['overall_best_obj_values'].append(best_obj_values.mean().item())
             result_dict['elapsed_times'].append(time.time() - start_time)
+            result_dict['logits'].append(logits)
 
             if verbose:
                 print(f"Step {step}. Obj value: {obj_value.mean().item()}")
 
         # End of inference
         elapsed_time = time.time() - start_time
+
+        # Store the final results
+        result_dict['final_obj_values'] = obj_value
+        result_dict['final_solutions'] = state.solutions
 
         if verbose:
             print(f"Best Objective Value: {best_obj_values.mean().item():.4f}. Elapsed Time: {elapsed_time:.2f} sec")
