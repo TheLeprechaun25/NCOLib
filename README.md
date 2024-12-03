@@ -1,5 +1,9 @@
 # Neural Combinatorial Optimization Library (NCOLib)
 
+
+![Static Badge](https://img.shields.io/badge/Python-3.8-blue) ![Static Badge](https://img.shields.io/badge/Pytorch-2.0-green)
+
+
 ## Introduction
 The Neural Combinatorial Optimization Library (NCOLib) is an accessible software library designed to simplify the application of neural network models and deep learning algorithms to approximately solve combinatorial optimization problems. It brings the power of NCO closer to industry professionals and researchers.
 
