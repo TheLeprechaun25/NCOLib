@@ -189,7 +189,7 @@ class LOPImprovementProblem(ImprovementProblem):
 # 2) Define the environment, the model, and the trainer
 lop_problem = LOPImprovementProblem(device=device)
 
-# Now, we define the environment for the TSP (permutation) using a constructive mode
+# Now, we define the environment for the LOP (permutation) using a constructive mode
 lop_env = Env(problem=lop_problem,
               reward=ImprovementReward(positive_only=False, normalize=True),
               stopping_criteria=ImprovementStoppingCriteria(max_steps=100, patience=5),
