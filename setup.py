@@ -8,7 +8,7 @@ setup(
     description="A Neural Combinatorial Optimization library based on PyTorch",
     long_description=open('README.md').read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/your_project_name",
+    url="https://github.com/TheLeprechaun25/NCOLib",
     package_dir={"": "nco_lib"},
     packages=find_packages(where="nco_lib"),
     install_requires=open('requirements.txt').read().splitlines(),
