@@ -353,7 +353,8 @@ class ConstructiveTrainer(Trainer):
                 self.save_checkpoint(save_path, epoch)
 
         # End of training loop - Save the final model
-        self.save_checkpoint(save_path, epochs)
+        if save_path:
+            self.save_checkpoint(save_path, epochs)
 
         if verbose:
             print(f"End of model training. Model saved. Total Elapsed Time: {time.time() - start_time:.2f} sec")
@@ -678,7 +679,8 @@ class ImprovementTrainer(Trainer):
                 self.save_checkpoint(save_path, epoch)
 
         # End of training loop - Save the final model
-        self.save_checkpoint(save_path, epochs)
+        if save_path:
+            self.save_checkpoint(save_path, epochs)
 
         if verbose:
             print(f"End of model training. Model saved. Total Elapsed Time: {time.time() - start_time:.2f} sec")

@@ -177,7 +177,7 @@ lop_env = Env(problem=lop_problem,
               device=device)
 
 # Define the model based on 2 node features (2D coordinates) and
-lop_model = EdgeInGTModel(decoder='edge', node_in_dim=2, edge_in_dim=1, aux_node=False,
+lop_model = EdgeInGTModel(decoder='linear', node_in_dim=2, edge_in_dim=1, aux_node=False,
                           logit_clipping=10.0).to(device)
 
 # Define the RL training algorithm
