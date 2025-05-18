@@ -89,7 +89,7 @@ class LOPImprovementProblem(ImprovementProblem):
 
     def _init_features(self, state: State) -> State:
         """
-        Here the user can define the initialization of the node features for the TSP problem.
+        Here the user can define the initialization of the node features for the LOP problem.
 
         For the improvement method, the init_features and update_features will be the same, so we call it from here
         """
@@ -189,13 +189,13 @@ class LOPImprovementProblem(ImprovementProblem):
 # 2) Define the environment, the model, and the trainer
 lop_problem = LOPImprovementProblem(device=device)
 
-# Now, we define the environment for the LOP (permutation) using a constructive mode
+# Now, we define the environment for the LOP (permutation)
 lop_env = Env(problem=lop_problem,
               reward=ImprovementReward(positive_only=False, normalize=True),
               stopping_criteria=ImprovementStoppingCriteria(max_steps=100, patience=5),
               device=device)
 
-# Define the model based on 2 node features (2D coordinates) and
+# Define the model
 lop_model = EdgeGNNModel(decoder='edge', node_in_dim=1, edge_in_dim=2, edge_out_dim=1, aux_node=False,
                          logit_clipping=10.0).to(device)
 
@@ -205,7 +205,7 @@ lop_trainer = ImprovementTrainer(model=lop_model,
                                  optimizer=torch.optim.Adam(lop_model.parameters(), lr=1e-4),
                                  device=device)
 # %%
-# 3) Run training and inference for the Traveling Salesman Problem
+# 3) Run training and inference
 train_results = lop_trainer.train(epochs=10, episodes=100, problem_size=20, batch_size=32, pomo_size=3,
                                   eval_problem_size=20, eval_batch_size=256, baseline_type='mean', update_freq=10,
                                   verbose=True)

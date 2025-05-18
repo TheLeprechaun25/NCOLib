@@ -192,13 +192,13 @@ class TSPImprovementProblem(ImprovementProblem):
 # 2) Define the environment, the model, and the trainer
 tsp_problem = TSPImprovementProblem(device=device)
 
-# Now, we define the environment for the TSP (permutation) using a constructive mode
+# Now, we define the environment for the TSP (permutation)
 tsp_env = Env(problem=tsp_problem,
               reward=ImprovementReward(positive_only=False, normalize=True),
               stopping_criteria=ImprovementStoppingCriteria(max_steps=200, patience=5),
               device=device)
 
-# Define the model based on 2 node features (2D coordinates) and
+# Define the model based on 2 node features (2D coordinates)
 tsp_model = EdgeInOutGTModel(decoder='edge', node_in_dim=2, edge_in_dim=3, edge_out_dim=1, aux_node=False,
                              logit_clipping=10.0).to(device)
 
