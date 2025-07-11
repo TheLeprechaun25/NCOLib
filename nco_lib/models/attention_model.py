@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from .base_layers import multi_head_attention, reshape_by_heads
 
 
 class TSPModel(nn.Module):
@@ -244,38 +245,6 @@ class DecoderLayer(nn.Module):
         out2 = self.feedForward(out1)
         out3 = out1 + out2
         return out3
-
-
-def reshape_by_heads(qkv, head_num):
-    batch_s = qkv.size(0)
-    n = qkv.size(1)
-
-    q_reshaped = qkv.reshape(batch_s, n, head_num, -1)
-
-    q_transposed = q_reshaped.transpose(1, 2)
-
-    return q_transposed
-
-
-def multi_head_attention(q, k, v):
-    batch_s = q.size(0)
-    head_num = q.size(1)
-    n = q.size(2)
-    key_dim = q.size(3)
-
-    score = torch.matmul(q, k.transpose(2, 3))  # shape: (B, head_num, n, n)
-
-    score_scaled = score / torch.sqrt(torch.tensor(key_dim, dtype=torch.float))
-
-    weights = nn.Softmax(dim=3)(score_scaled)  # shape: (B, head_num, n, n)
-
-    out = torch.matmul(weights, v)  # shape: (B, head_num, n, key_dim)
-
-    out_transposed = out.transpose(1, 2)  # shape: (B, n, head_num, key_dim)
-
-    out_concat = out_transposed.reshape(batch_s, n, head_num * key_dim)  # shape: (B, n, head_num*key_dim)
-
-    return out_concat
 
 
 class Feed_Forward_Module(nn.Module):
