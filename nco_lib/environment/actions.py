@@ -71,28 +71,6 @@ def insert(solutions, actions):
 
     return new_solution.view(batch_size, pomo_size, problem_size)
 
-    node1 = actions // problem_size
-    node2 = actions % problem_size
-    node1 = node1.unsqueeze(1)
-    node2 = node2.unsqueeze(1)
-    new_solutions = solutions.clone()
-
-    # Fix connection for first node
-    argsort = solutions.argsort()
-
-    pre_first = argsort.gather(1, node1)
-    post_first = solutions.gather(1, node1)
-
-    new_solutions.scatter_(1, pre_first, post_first)
-
-    # fix connection for second node
-    post_second = new_solutions.gather(1, node2)
-
-    new_solutions.scatter_(1, node2, node1)
-    new_solutions.scatter_(1, node1, post_second)
-
-    return new_solutions.view(batch_size, pomo_size, problem_size)
-
 
 def two_opt(solutions, actions):
     """
