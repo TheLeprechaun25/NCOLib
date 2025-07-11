@@ -48,7 +48,7 @@ class MCImprovementProblem(ImprovementProblem):
         """
         # In the MIS problem, we generate the adjacency matrix as the unique instance information
         # We will use a predefined function to generate a random graph with a given edge-probability (15%)
-        state.adj_matrix = generate_random_graph(state.batch_size, state.problem_size, state.seed, edge_prob=0.15, device=device)
+        state.adj_matrix = generate_random_graph(state.batch_size, state.problem_size, state.seed, edge_prob=0.15, device=self.device)
         return state
 
     def _init_solutions(self, state: State) -> State:
@@ -63,7 +63,7 @@ class MCImprovementProblem(ImprovementProblem):
             random.seed(state.seed)
 
         # Generate the initial solutions
-        state.solutions = torch.randint(0, 2, (state.batch_size, state.pomo_size, state.problem_size)).to(self.device)
+        state.solutions = torch.randint(0, 2, (state.batch_size, state.pomo_size, state.problem_size), device=self.device)
         return state
 
     def _init_features(self, state: State) -> State:
@@ -86,7 +86,7 @@ class MCImprovementProblem(ImprovementProblem):
         the _init_mask function and the _update_mask function are the same, so we will call it from here.
         """
         # No mask
-        state.mask = torch.ones((state.batch_size, state.pomo_size, state.problem_size, 1), device=device)
+        state.mask = torch.ones((state.batch_size, state.pomo_size, state.problem_size, 1), device=self.device)
         return state
 
     def _obj_function(self, state: State) -> torch.Tensor:
@@ -94,7 +94,7 @@ class MCImprovementProblem(ImprovementProblem):
         In this function, the user needs to define the objective function for the MIS problem.
         This function is called in every step for improvement methods.
         """
-        obj_value = torch.zeros(state.batch_size, state.pomo_size, device=device)
+        obj_value = torch.zeros(state.batch_size, state.pomo_size, device=self.device)
         ising_solutions = 2 * state.solutions - 1
         for b in range(state.batch_size):
             for p in range(state.pomo_size):
@@ -141,7 +141,7 @@ batch_size = 32
 pomo_size = 1
 mc_problem = MCImprovementProblem(device=device)
 
-memory_type = 'marco'  # 'marco' or 'last_action' or 'none'
+memory_type = 'marco_shared'  # 'marco_shared', 'marco_individual or 'last_action' or 'none'
 mc_memory = select_memory(memory_type=memory_type,
                           mem_aggr='linear',
                           state_dim=problem_size,
@@ -162,7 +162,7 @@ mc_env = Env(problem=mc_problem,
 node_in_dim = 2  # Two classes for the nodes (in or out of the set)
 if memory_type == 'last_action':
     node_in_dim += 1  # Add one dimension for the last time the action was selected
-elif memory_type == 'marco':
+elif memory_type.startswith('marco'):
     node_in_dim += 2  # Add two dimensions for the memory information of marco
 
 # Define the model based on edge features (adjacency matrix)

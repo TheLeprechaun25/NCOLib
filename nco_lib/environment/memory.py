@@ -70,8 +70,8 @@ class MarcoMemory(Memory):
         self.repeat_punishment = repeat_punishment
 
         # Initialize memories and index
-        self.state_memories = [torch.zeros((0, self.state_dim)) for _ in range(self.n_memories)]
-        self.action_memories = [torch.zeros((0, self.action_dim, 2)) for _ in range(self.n_memories)]
+        self.state_memories = [torch.zeros((0, self.state_dim), device='cuda') for _ in range(self.n_memories)]
+        self.action_memories = [torch.zeros((0, self.action_dim, 2), device=device) for _ in range(self.n_memories)]
 
         self.used_memory = 0
 
@@ -88,10 +88,10 @@ class MarcoMemory(Memory):
         assert state.pomo_size == self.pomo_size, "POMO size of state and memory do not match"
 
         batch_pomo_size = state.batch_size * state.pomo_size
-        batch_pomo_range = torch.arange(batch_pomo_size)
+        batch_pomo_range = torch.arange(batch_pomo_size, device=self.device)
 
         # Select the first part. TODO: marco for multiclass problems
-        action = action[0].reshape(batch_pomo_size).cpu()
+        action = action[0].reshape(batch_pomo_size)
 
         key = state.solutions.reshape(batch_pomo_size, self.state_dim)
 
@@ -155,11 +155,11 @@ class MarcoMemory(Memory):
         query = state.solutions.clone()
         query = query.reshape(batch_pomo_size, self.state_dim).float()
 
-        nearest_actions = torch.zeros((batch_pomo_size, self.action_dim, 2))
+        nearest_actions = torch.zeros((batch_pomo_size, self.action_dim, 2), device=self.device)
 
-        avg_similarity = torch.zeros(batch_pomo_size)
-        max_similarity = torch.zeros(batch_pomo_size)
-        revisited = torch.zeros(batch_pomo_size)
+        avg_similarity = torch.zeros(batch_pomo_size, device=self.device)
+        max_similarity = torch.zeros(batch_pomo_size, device=self.device)
+        revisited = torch.zeros(batch_pomo_size, device=self.device)
 
         # Get k nearest states
         for idx in range(self.n_memories):
@@ -208,10 +208,10 @@ class MarcoMemory(Memory):
                     nearest_actions = torch.sum(nearest_acts * (torch.exp(torch.log(torch.tensor(2)) * sim[:, :, None, None]) - 1), dim=1)
                     # nearest_actions.shape = (batch_size, state_dim, 2)
 
-        nearest_actions = nearest_actions.reshape(self.batch_size, self.pomo_size, self.state_dim, 2).to(self.device)
-        revisited = revisited.view(self.batch_size, self.pomo_size).to(self.device)
-        avg_similarity = avg_similarity.reshape(self.batch_size, self.pomo_size).to(self.device)
-        max_similarity = max_similarity.reshape(self.batch_size, self.pomo_size).to(self.device)
+        nearest_actions = nearest_actions.reshape(self.batch_size, self.pomo_size, self.state_dim, 2)
+        revisited = revisited.view(self.batch_size, self.pomo_size)
+        avg_similarity = avg_similarity.reshape(self.batch_size, self.pomo_size)
+        max_similarity = max_similarity.reshape(self.batch_size, self.pomo_size)
 
         return nearest_actions, revisited, avg_similarity, max_similarity
 
@@ -219,8 +219,8 @@ class MarcoMemory(Memory):
         """
         Clears the memory
         """
-        self.state_memories = [torch.zeros((0, self.state_dim)) for _ in range(self.n_memories)]
-        self.action_memories = [torch.zeros((0, self.action_dim, 2)) for _ in range(self.n_memories)]
+        self.state_memories = [torch.zeros((0, self.state_dim), device=self.device) for _ in range(self.n_memories)]
+        self.action_memories = [torch.zeros((0, self.action_dim, 2), device=self.device) for _ in range(self.n_memories)]
         self.used_memory = 0
 
 
@@ -232,7 +232,7 @@ class LastActionMemory(Memory):
         self.repeat_punishment = repeat_punishment
         self.device = device
 
-        self.cur_action = torch.zeros(batch_size*pomo_size, action_dim)
+        self.cur_action = torch.zeros(batch_size*pomo_size, action_dim, device=device)
 
         self.steps_since_preformed = -1 * torch.ones(batch_size*pomo_size, action_dim)
 
@@ -250,7 +250,7 @@ class LastActionMemory(Memory):
         batch_pomo_range = torch.arange(state.batch_size*state.pomo_size)
 
         # Select the first part. TODO: marco for multiclass problems
-        action = action[0].reshape(state.batch_size*state.pomo_size).cpu()
+        action = action[0].reshape(state.batch_size*state.pomo_size)
 
         # Update the current action
         self.cur_action = action
@@ -310,8 +310,8 @@ def select_memory(state_dim, action_dim, batch_size, pomo_size, device, memory_t
                                   pomo_size=pomo_size,
                                   repeat_punishment=repeat_punishment,
                                   device=device)
-    elif memory_type == 'marco':
-        if memory_type == 'shared':
+    elif memory_type.startswith('marco'):
+        if memory_type == 'marco_shared':
             n_memories = 1
         else:  # 'individual' or training
             n_memories = batch_size*pomo_size
