@@ -34,11 +34,10 @@ class Trainer(ABC):
         # Check node and edge dimensions are equal in the model and env.problem
         # first check if the model has an attribute node_in_dim
         if hasattr(self.model, 'node_in_dim'):
-            assert self.model.node_in_dim == self.env.problem.node_in_dim + self.env.mem_dim, "Node input dimensions do not match. Model: {}, Problem def: {}".format(self.model.node_in_dim, self.env.problem.node_in_dim)
+            assert self.model.node_in_dim == self.env.problem.node_in_dim + self.env.mem_dim, "Node input dimensions do not match. Model: {}, Problem def: {}".format(self.model.node_in_dim, self.env.problem.node_in_dim + self.env.mem_dim)
 
         if hasattr(self.model, 'edge_in_dim'):
             assert self.model.edge_in_dim == self.env.problem.edge_in_dim, "Edge input dimensions do not match. Model: {}, Problem def: {}".format(self.model.edge_in_dim, self.env.problem.edge_in_dim)
-
 
     @abstractmethod
     def inference(self, **kwargs):
