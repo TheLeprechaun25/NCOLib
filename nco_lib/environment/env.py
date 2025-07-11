@@ -91,7 +91,7 @@ class ImprovementReward(Reward):
         self.last_obj_value = obj_value
 
 
-class StoppingCriteria(ABC):
+class StoppingCriteria:
     def __init__(self):
         """
         Stopping Criteria parent class with two abstract methods:
@@ -178,7 +178,7 @@ class ImprovementStoppingCriteria(StoppingCriteria):
         self.best_average_obj_value = float('-inf')
 
 
-class Env(ABC):
+class Env:
     def __init__(self, problem: Problem, reward: Reward, stopping_criteria: StoppingCriteria,
                  memory: Memory = None, data_loader: DataLoader or None = None, device: torch.device or str = 'cpu'):
         """
@@ -252,7 +252,7 @@ class Env(ABC):
             self.state.memory_info = None
         else:
             # add a dummy tensor to keep the dimensions
-            self.state.memory_info = torch.zeros((batch_size, pomo_size, cur_problem_size, self.mem_dim))
+            self.state.memory_info = torch.zeros((batch_size, pomo_size, cur_problem_size, self.mem_dim), device=self.device)
 
         # Check whether the DataLoader will be used
         if self.data_loader is not None:

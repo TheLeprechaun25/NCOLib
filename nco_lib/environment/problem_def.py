@@ -42,8 +42,8 @@ class Problem(ABC):
         self.device = torch.device(device)
 
         # Auxiliary state to get the dimensions of the node and edge features of the user-defined problem definition
-        aux_state = State(batch_size=1, problem_size=5, pomo_size=1, node_features=None, adj_matrix=None, edge_features=None,
-                          solutions=None, mask=None, is_complete=False, device=self.device)
+        aux_state = State(batch_size=1, problem_size=9, pomo_size=1, node_features=None, adj_matrix=None, edge_features=None,
+                          solutions=None, mask=None, is_complete=False, device=device)
 
         aux_state = self._init_instances(aux_state)
         aux_state = self._init_solutions(aux_state)
