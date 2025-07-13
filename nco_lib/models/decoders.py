@@ -35,12 +35,9 @@ class LinearDecoder(BaseDecoder):
         """
         if self.aux_node:
             # Divide aux node from the node embeddings
-            h, h_g = h[:, :-self.node_out_dim, :], h[:, -1:, :]
-        else:
-            # Graph embedding isn't needed in linear decoder
-            h_g = None
+            h, h_g = h[:, :-1, :], h[:, -1:, :]
 
-        return self.linear(h), h_g
+        return self.linear(h)
 
 
 class LinearEdgeDecoder(BaseDecoder):
@@ -63,7 +60,7 @@ class LinearEdgeDecoder(BaseDecoder):
         Forward pass for the LinearDecoder.
         :param e: torch.Tensor: The input edge embeddings. Shape: (batch_size, n_edges, hidden_dim).
         """
-        return self.linear(e), None
+        return self.linear(e)
 
 
 class AttentionDecoder(BaseDecoder):
@@ -129,7 +126,7 @@ class AttentionDecoder(BaseDecoder):
 
         y = y.transpose(1, 2)
         # shape: (batch_size, n_nodes, 1)
-        return y, h_g
+        return y
 
 
 # create a dictionary for the encoder and decoder classes

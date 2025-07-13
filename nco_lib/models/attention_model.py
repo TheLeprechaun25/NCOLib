@@ -26,7 +26,7 @@ class TSPModel(nn.Module):
             prob = probs[torch.arange(batch_size_V)[:, None], selected_teacher[:, None]].reshape(batch_size_V, 1)  # shape: [B, 1]
 
         if self.mode == 'test':
-            if repair == False:
+            if repair:
                 if current_step <= 1:
                     self.encoded_nodes = self.encoder(state.data)
 
@@ -36,7 +36,7 @@ class TSPModel(nn.Module):
                 selected_teacher = selected_student
                 prob = 1
 
-            if repair == True:
+            else:
                 if current_step <= 2:
                     self.encoded_nodes = self.encoder(state.data)
 

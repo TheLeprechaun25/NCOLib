@@ -1,11 +1,9 @@
 import math
-from typing import Dict
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from abc import abstractmethod
-from .base_layers import MLP, Norm, multi_head_attention, reshape_by_heads
+from .base_layers import MLP, Norm
 from .decoders import DECODER_DICT
 
 
@@ -201,13 +199,13 @@ class GTModel(BaseGTModel):
             h = layer(h)
 
         # Decode to node-based action logits
-        out, aux_node = self.decoder(h)
+        out = self.decoder(h)
 
         if self.clip_logits:
             out = out / self.sqrt_embedding_dim
             out = self.logit_clipping * torch.tanh(out)
 
-        return out, aux_node
+        return out
 
 
 class EdgeInGTModel(BaseGTModel):
@@ -284,13 +282,13 @@ class EdgeInGTModel(BaseGTModel):
             h = layer(h, e)
 
         # Decode to node-based action logits
-        out, aux_node = self.decoder(h)
+        out = self.decoder(h)
 
         if self.clip_logits:
             out = out / self.sqrt_embedding_dim
             out = self.logit_clipping * torch.tanh(out)
 
-        return out, aux_node
+        return out
 
 
 '''class EdgeOutGTModel(BaseGTModel):
@@ -430,283 +428,13 @@ class EdgeInOutGTModel(BaseGTModel):
         e_out = e_out.view(state.batch_size*state.pomo_size, -1, e_out.size(-1))
 
         # Decode to edge-based action logits
-        out, _ = self.decoder(e_out)
+        out = self.decoder(e_out)
 
         if self.clip_logits:
             out = out / self.sqrt_embedding_dim
             out = self.logit_clipping * torch.tanh(out)
 
-        return out, aux_node
-
-
-class DeepMCGCN(BaseGTModel):
-    def __init__(self, node_in_dim: int, edge_in_dim: int, node_out_dim: int = 1, decoder: str = 'linear',
-                 hidden_dim: int = 128, n_encoder_layers: int = 3, mult_hidden: int = 4, n_heads: int = 8,
-                 dropout: float = 0.0, activation: str = 'relu', normalization: str = 'layer', bias: bool = False,
-                 logit_clipping: float = 10.0):
-        """
-        Node- and Edge-based featured Graph Transformer model class with node-based action outputs. It processes the first half
-        edge features independently from the second half edge features. That is, it assumes that the input consists of two graphs
-        with edge_in_dim/2 edge features each that have to be processed independently.
-
-        :param node_in_dim: int: The input dimension of the node features.
-        :param edge_in_dim: int: The input dimension of the edge features.
-        :param node_out_dim: int: The output dimension of the node-based action logits.
-        :param decoder: str: The decoder to use. Options: 'linear', 'attention'.
-        :param hidden_dim: int: The hidden dimension of the model.
-        :param n_encoder_layers: int: The number of layers in the model.
-        :param mult_hidden: int: The multiplier for the hidden dimension of the MLP.
-        :param n_heads: int: The number of attention heads.
-        :param dropout: float: The dropout rate.
-        :param activation: str: The activation function to use in the MLP.
-        :param normalization: str: The normalization to use.
-        :param bias: bool: Whether to use bias in the linear layers.
-        :param logit_clipping: float: The logit clipping value. 0.0 means no clipping. 10.0 is a commonly used value.
-        """
-        super(DeepMCGCN, self).__init__(out_dim=node_out_dim, hidden_dim=hidden_dim, logit_clipping=logit_clipping)
-        self.node_in_dim = node_in_dim
-        self.node_out_dim = node_out_dim
-        self.edge_in_dim = edge_in_dim
-        self.n_heads = n_heads
-
-        self.in_node_projection = nn.Linear(self.node_in_dim, hidden_dim, bias=bias)
-        self.in_node_projection_1 = nn.Linear(self.node_in_dim, hidden_dim, bias=bias)
-        self.in_node_projection_2 = nn.Linear(self.node_in_dim, hidden_dim, bias=bias)
-
-        self.in_edge_projection = nn.Linear(self.edge_in_dim, hidden_dim, bias=bias)
-        self.in_edge_projection_1 = nn.Linear(int(self.edge_in_dim / 2), hidden_dim, bias=bias)
-        self.in_edge_projection_2 = nn.Linear(int(self.edge_in_dim / 2), hidden_dim, bias=bias)
-
-        self.encoder_layers = nn.ModuleList(
-            [EdgeGTEncoderLayer(hidden_dim, mult_hidden, n_heads, dropout, activation, normalization, bias)
-             for _ in range(n_encoder_layers)])
-        self.encoder_layers_1 = nn.ModuleList(
-            [EdgeGTEncoderLayer(hidden_dim, mult_hidden, n_heads, dropout, activation, normalization, bias)
-             for _ in range(n_encoder_layers)])
-        self.encoder_layers_2 = nn.ModuleList(
-            [EdgeGTEncoderLayer(hidden_dim, mult_hidden, n_heads, dropout, activation, normalization, bias)
-             for _ in range(n_encoder_layers)])
-
-        self.mlp = MLP(hidden_dim=3 * hidden_dim, mult_hidden=1, activation=activation, dropout=dropout, bias=bias)
-
-        assert decoder in DECODER_DICT.keys(), f"Decoder must be one of {DECODER_DICT.keys()}"
-        self.decoder = DECODER_DICT[decoder](3 * hidden_dim, node_out_dim, n_heads, False, bias=bias)
-
-    def forward(self, state):
-        # Reshape the node features to (batch_size * pomo_size, n_nodes, features)
-        node_features = state.node_features.clone().view(state.batch_size * state.pomo_size, state.problem_size, -1)
-
-        # Add memory information to node features
-        if state.memory_info is not None:
-            memory = state.memory_info.clone().view(state.batch_size * state.pomo_size, state.problem_size, -1)
-            node_features = torch.cat([node_features, memory], dim=-1)
-
-        # Edge features
-        edges = state.edge_features.clone().view(state.batch_size * state.pomo_size, state.problem_size,
-                                                 state.problem_size, -1)
-
-        # Combined channel (graph)
-        # TODO: use concatenation instead of sum
-        edge_feat = edges
-        # First channel (graph)
-        edge_feat_1 = edges[:, :, :, :int(self.edge_in_dim / 2)]
-        # Second channel (graph)
-        edge_feat_2 = edges[:, :, :, int(self.edge_in_dim / 2):]
-
-        # Initial projection from node features to node embeddings
-
-        # Combined channel (graph)
-        h = self.in_node_projection(node_features)
-        # First channel (graph)
-        h1 = self.in_node_projection_1(node_features)
-        # Second channel (graph)
-        h2 = self.in_node_projection_2(node_features)
-
-        # Initial projection from edge features to edge embeddings
-
-        # Combined channel (graph)
-        e = self.in_edge_projection(edge_feat)
-        # First channel (graph)
-        e1 = self.in_edge_projection_1(edge_feat_1)
-        # Second channel (graph)
-        e2 = self.in_edge_projection_2(edge_feat_2)
-
-        # Pass through the layers
-
-        # Initialize residual connections
-        h_res = torch.clone(h)
-        h1_res = torch.clone(h1)
-        h2_res = torch.clone(h2)
-
-        # Parallel encoders phase
-        for i, _ in enumerate(self.encoder_layers):
-            # Process encoder layer
-            h = self.encoder_layers[i](h, e)
-            h1 = self.encoder_layers_1[i](h1, e1)
-            h2 = self.encoder_layers_2[i](h2, e2)
-
-            # Add connections between encoders + residual connection
-            h_ = h + h1 + h2 + h_res
-            h1_ = h1 + h2 + h1_res
-            h2_ = h1 + h2 + h2_res
-            # TODO: use concatenation instead of sum
-
-            h = h_
-            h1 = h1_
-            h2 = h2_
-
-            # Update residual connections
-            h_res = torch.clone(h_)
-            h1_res = torch.clone(h1_)
-            h2_res = torch.clone(h2_)
-
-        # Attention between h1 and h2, double attention, using k=v=h1 and q=h2 / k=v=h2 and q=h1
-        h1 = reshape_by_heads(h1, head_num=self.n_heads)
-        h2 = reshape_by_heads(h2, head_num=self.n_heads)
-
-        a1 = multi_head_attention(h2, h1, h1)
-        a2 = multi_head_attention(h1, h2, h2)
-
-        a = torch.cat((a1, a2), dim=-1)
-
-        # MLP that joins the information from all channels
-        #h = self.mlp(torch.cat([h, h1, h2], dim=-1))
-        h = self.mlp(torch.cat([a, h], dim=-1))
-
-        # Decode to node-based action logits
-        out, aux_node = self.decoder(h)
-
-        if self.clip_logits:
-            out = out / self.sqrt_embedding_dim
-            out = self.logit_clipping * torch.tanh(out)
-
-        return out, aux_node
-
-
-class HeteroMCGCN(BaseGTModel):
-    def __init__(
-        self,
-        node_in_dim: int,
-        edge_in_dims: Dict[str, int],
-        node_out_dim: int = 1,
-        decoder: str = "linear",
-        hidden_dim: int = 128,
-        n_encoder_layers: int = 3,
-        mult_hidden: int = 4,
-        n_heads: int = 8,
-        dropout: float = 0.0,
-        activation: str = "relu",
-        normalization: str = "layer",
-        bias: bool = False,
-        logit_clipping: float = 10.0,
-    ):
-        """
-        Heterogeneous GNN with cross‐channel attention between two edge‐types.
-        Intended for QAP: separate 'flow' and 'dist' channels that later interact.
-        """
-        super().__init__(out_dim=node_out_dim,
-                         hidden_dim=hidden_dim,
-                         logit_clipping=logit_clipping)
-
-        # bookkeeping
-        self.edge_types = list(edge_in_dims.keys())
-        self.n_heads = n_heads
-
-        # 1) node → hidden
-        self.in_node_proj = nn.Linear(node_in_dim, hidden_dim, bias=bias)
-
-        # 2) per‐edge‐type: edge → hidden
-        self.in_edge_proj = nn.ModuleDict({
-            et: nn.Linear(dim, hidden_dim, bias=bias)
-            for et, dim in edge_in_dims.items()
-        })
-
-        # 3) per‐edge‐type stacks of EdgeGTEncoderLayer
-        self.encoders = nn.ModuleDict({
-            et: nn.ModuleList([
-                EdgeGTEncoderLayer(hidden_dim, mult_hidden, n_heads,
-                                   dropout, activation, normalization, bias)
-                for _ in range(n_encoder_layers)
-            ])
-            for et in self.edge_types
-        })
-
-        # 4) final fusion MLP and decoder
-        #    we have: base h0 + one channel per edge_type
-        total_dim = hidden_dim * (1 + len(self.edge_types))
-        self.mlp = MLP(total_dim, mult_hidden, activation, dropout, bias=bias)
-
-        assert decoder in DECODER_DICT, f"Unknown decoder {decoder}"
-        self.decoder = DECODER_DICT[decoder](total_dim, node_out_dim,
-                                             n_heads, False, bias=bias)
-
-    def forward(self, state):
-        B, P, N = state.batch_size, state.pomo_size, state.problem_size
-
-        # --- NODE FEATURES ---
-        # [B*P, N, node_in_dim]
-        nf = state.node_features.view(B * P, N, -1)
-        # base embedding
-        h0 = self.in_node_proj(nf)  # [B*P, N, H]
-
-        # --- EDGE FEATURES DICT ---
-        # each: [B, N, N, dim] → [B*P, N, N, dim]
-        ef = state.edge_features
-        e_proj = {
-            et: self.in_edge_proj[et](
-                ef[et].view(B * P, N, N, -1)
-            )
-            for et in self.edge_types
-        }
-
-        # --- CHANNEL ENCODING ---
-        h_ch = {}
-        for et in self.edge_types:
-            h = h0.clone()
-            e = e_proj[et]
-            # residual
-            res = h.clone()
-            for layer in self.encoders[et]:
-                h = layer(h, e)
-                h = h + res
-                res = h.clone()
-            h_ch[et] = h  # [B*P, N, H]
-
-        # --- CROSS‐CHANNEL ATTENTION (only two channels assumed) ---
-        # extract
-        h_flow = h_ch["flow"]
-        h_dist = h_ch["dist"]
-
-        # to heads shape [B*P, heads, N, H_head]
-        hf = reshape_by_heads(h_flow, head_num=self.n_heads)
-        hd = reshape_by_heads(h_dist, head_num=self.n_heads)
-
-        # flow queries dist, dist queries flow
-        af = multi_head_attention(q=hf, k=hd, v=hd)  # [B*P, heads, N, H_head]
-        ad = multi_head_attention(q=hd, k=hf, v=hf)
-
-        # back to [B*P, N, H]
-        h_flow = af.transpose(1, 2).contiguous().view_as(h_flow)
-        h_dist = ad.transpose(1, 2).contiguous().view_as(h_dist)
-
-        # overwrite with cross‐talked
-        h_ch["flow"], h_ch["dist"] = h_flow, h_dist
-
-        # --- FUSE & DECODE ---
-        # concat [h0, h_flow, h_dist] along feature axis
-        h_cat = torch.cat([h0] + [h_ch[et] for et in self.edge_types], dim=-1)
-
-        # fuse
-        h_fused = self.mlp(h_cat)
-
-        # final decoder → logits + aux
-        out, aux = self.decoder(h_fused)
-
-        if self.clip_logits:
-            out = out / self.sqrt_embedding_dim
-            out = self.logit_clipping * torch.tanh(out)
-
-        return out, aux
+        return out
 
 
 class HypergraphConv(nn.Module):

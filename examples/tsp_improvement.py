@@ -10,10 +10,10 @@ import torch
 import torch.nn.functional as F
 
 from nco_lib.environment.actions import two_opt, bit_flip, insert, swap
-from nco_lib.environment.env import State, Env, ConstructiveStoppingCriteria, ConstructiveReward, ImprovementReward, ImprovementStoppingCriteria
-from nco_lib.environment.problem_def import ConstructiveProblem, ImprovementProblem
-from nco_lib.models.graph_transformer import GTModel, EdgeInGTModel, EdgeInOutGTModel
-from nco_lib.trainer.trainer import ConstructiveTrainer, ImprovementTrainer
+from nco_lib.environment.env import State, Env, ImprovementReward, ImprovementStoppingCriteria
+from nco_lib.environment.problem_def import ImprovementProblem
+from nco_lib.models.graph_transformer import EdgeInOutGTModel
+from nco_lib.trainer.trainer import ImprovementTrainer
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

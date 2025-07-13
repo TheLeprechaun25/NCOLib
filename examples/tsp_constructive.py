@@ -9,6 +9,7 @@ import torch
 from nco_lib.environment.env import State, Env, ConstructiveStoppingCriteria, ConstructiveReward
 from nco_lib.environment.problem_def import ConstructiveProblem
 from nco_lib.models.graph_transformer import GTModel
+from nco_lib.models.gcn import GCNModel
 from nco_lib.trainer.trainer import ConstructiveTrainer
 
 
@@ -45,9 +46,35 @@ class TSPConstructiveProblem(ConstructiveProblem):
             torch.manual_seed(state.seed)
 
         # Generate the city coordinates as user-defined data
-        state.data['coords'] = torch.rand(state.batch_size, state.problem_size, 2, device=state.device)
+        coords = torch.rand(state.batch_size, state.problem_size, 2, device=state.device)
+        state.data['coords'] = coords
 
-        # One could also define the Euclidean distances to later be used as edge features
+        # Fully connected or kNN sparse graph
+        state.adj_matrix = torch.ones(state.batch_size, state.problem_size, state.problem_size, device=state.device)
+
+        """# compute all pairwise distances: [B, N, N] `torch.cdist` gives sqrt-sum-squared in last dim
+        dists = torch.cdist(coords, coords, p=2)  # Euclidean
+
+        # For each node i, pick the k+1 smallest distances (including self at 0)
+        #    topk returns the k+1 smallest (so we can drop self):
+        k = 4
+        knn = dists.topk(k=k + 1, largest=False)  # values, indices
+        knn_idx = knn.indices  # [B, N, k+1]
+
+        # 4) drop the first column (self-loop at distance 0)
+        knn_idx = knn_idx[..., 1:]  # now [B, N, k]
+
+        # 5) build empty adjacency and scatter 1’s at (i, neighbors)
+        adj = torch.zeros(state.batch_size, state.problem_size, state.problem_size, device=state.device)
+        batch_idx = torch.arange(state.batch_size, device=state.device)[:, None, None]  # [B,1,1]
+        node_idx = torch.arange(state.problem_size, device=state.device)[None, :, None]  # [1,N,1]
+
+        # set adj[b,i, knn_idx[b,i,j]] = 1
+        adj[batch_idx, node_idx, knn_idx] = 1
+
+        # 6) (optional) make the graph undirected by symmetrizing
+        state.adj_matrix = (adj + adj.transpose(1, 2) > 0).float()"""
+
         return state
 
     def _init_solutions(self, state: State) -> State:
@@ -222,6 +249,7 @@ tsp_env = Env(problem=tsp_problem,
 
 # Define the model based on 2 node features (2D coordinates)
 tsp_model = GTModel(decoder='attention', node_in_dim=6, aux_node=True, logit_clipping=10.0).to(device)
+#tsp_model = GCNModel(node_in_dim=6, n_layers=8, decoder='attention', aux_node=True)
 
 # Define the RL training algorithm
 tsp_trainer = ConstructiveTrainer(model=tsp_model,
@@ -230,8 +258,8 @@ tsp_trainer = ConstructiveTrainer(model=tsp_model,
                                   device=device)
 # %%
 # 3) Run training and inference for the Traveling Salesman Problem
-train_results = tsp_trainer.train(epochs=1, episodes=10, problem_size=20, batch_size=64, pomo_size=1,
-                                  eval_problem_size=20, eval_batch_size=256, baseline_type='mean', save_path='../saved_checkpoints/model.pth', verbose=True)
+train_results = tsp_trainer.train(epochs=1, episodes=1000, problem_size=20, batch_size=64, pomo_size=1, save_freq=-1,
+                                  eval_problem_size=20, eval_batch_size=256, baseline_type='mean', verbose=True)
 
 
 
@@ -241,7 +269,8 @@ inference_results = tsp_trainer.inference(problem_size=20, batch_size=1, pomo_si
 
 # %%
 # 4) Load the model and run inference
-tsp_trainer.load_checkpoint('../saved_checkpoints/model.pth')
+path_to_checkpoint = '../runs/checkpoint.pth'  # <-- Modify this with the saved checkpoint path
+tsp_trainer.load_checkpoint(path_to_checkpoint)
 
 inference_results2 = tsp_trainer.inference(problem_size=20, batch_size=1, pomo_size=1,
                                            deterministic=True, seed=42, verbose=True)

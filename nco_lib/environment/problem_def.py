@@ -1,36 +1,41 @@
 from abc import ABC, abstractmethod
-from typing import Tuple
-
+from typing import Optional, Tuple, Any, Dict
+from dataclasses import dataclass, field, fields, replace
 import torch
 
 
+@dataclass()
 class State:
-    def __init__(self, batch_size: int, problem_size: int or Tuple[int], pomo_size: int, node_features: torch.Tensor or None, adj_matrix: torch.Tensor or None,
-                 edge_features: torch.Tensor or None, solutions: torch.Tensor or None, mask: torch.Tensor or None, is_complete: bool = False,
-                 seed: int or None = None, device: str or torch.device = 'cpu', **kwargs):
-        """
-        The state of the environment. It contains all the information needed to represent the problem instance and the
-        current solution.
-        """
-        self.data = kwargs  # User-defined attributes stored in a dictionary
+    batch_size:       int
+    problem_size:     int or Tuple[int, ...]
+    pomo_size:        int
+    node_features:    Optional[torch.Tensor]
+    adj_matrix:       Optional[torch.Tensor]
+    edge_features:    Optional[torch.Tensor]
+    solutions:        Optional[torch.Tensor]
+    mask:             Optional[torch.Tensor]
+    is_complete:      bool = False
+    seed:             Optional[int] = None
+    device:           torch.device = torch.device('cpu')
+    # catch-all for any extra fields
+    data:            Dict[str, Any] = field(default_factory=dict)
 
-        self.batch_size = batch_size  # Number of instances in the batch
-        self.problem_size = problem_size  # Size of the problem (number of nodes)
-        self.pomo_size = pomo_size  # Number of parallel initializations (Policy Optimization with Multiple Optima)
+    def to(self, device: torch.device) -> "State":
+        # build a dict of all ﬁelds, moving tensors
+        kwargs = {}
+        for f in fields(self):
+            val = getattr(self, f.name)
+            if isinstance(val, torch.Tensor):
+                kwargs[f.name] = val.to(device)
+            else:
+                kwargs[f.name] = val
+        return replace(self, **kwargs)
 
-        self.adj_matrix = adj_matrix  # Adjacency matrix
-        self.node_features = node_features  # Node features
-        self.edge_features = edge_features   # Edge features
+    def cpu(self) -> "State":
+        return self.to(torch.device('cpu'))
 
-        self.solutions = solutions  # Current solutions
-        self.mask = mask  # Mask to avoid selecting certain actions
-        self.is_complete = is_complete  # Is the solution complete?
-
-        self.memory_info = None  # Memory information
-        self.last_action = None  # Last action taken
-
-        self.seed = seed  # Seed for reproducibility
-        self.device = device  # Device
+    def cuda(self, device_id: int = 0) -> "State":
+        return self.to(torch.device(f'cuda:{device_id}'))
 
 
 class Problem(ABC):
@@ -203,7 +208,6 @@ class ConstructiveProblem(Problem):
         raise NotImplementedError
 
     def _init_mask(self, state: State) -> State:
-        state.mask = torch.zeros((state.batch_size, state.problem_size, 1), device=state.device)
         return state
 
     @abstractmethod
@@ -225,6 +229,95 @@ class ConstructiveProblem(Problem):
     @abstractmethod
     def _check_completeness(self, state: State) -> State:
         raise NotImplementedError
+
+
+class HeatmapProblem(Problem):
+    def __init__(self, device: str or torch.device):
+        """
+        :param device: str or torch.device: Device to use for computations.
+        """
+        super().__init__(device)
+        self.device = torch.device(device)
+
+    def generate_state(self, problem_size: int, batch_size: int, pomo_size: int, seed: int or None = None) -> (State, torch.Tensor):
+        """
+        Generate a batch of states for the problem.
+
+        Returns:
+        - A state class with features representing the problem instance: node_features, edge_features, solution, mask...
+        """
+
+        # Initialize the state
+        state = State(batch_size=batch_size, problem_size=problem_size, pomo_size=pomo_size, node_features=None,
+                      adj_matrix=None, edge_features=None, solutions=None, mask=None, is_complete=False,
+                      device=self.device, seed=seed)
+
+        # 1 - Generate new graphs
+        state = self._init_instances(state)
+
+        # 2 - Initialize the solution
+        state = self._init_solutions(state)
+
+        # 3- Compute the initial objective value: in heatmap frameworks, the objective value is typically computed at the end
+        obj_value = torch.zeros(1, device=state.device)
+
+        # 4 - Update state with features
+        state = self._init_features(state)
+
+        # 5 - Initialize mask
+        state = self._init_mask(state)
+
+        return state, obj_value
+
+    def update_state(self, state: State, logits: torch.Tensor) -> (State, torch.Tensor):
+        """
+        Update the state with the given action.
+
+        Returns:
+        - A state class with updated features.
+        """
+
+        # 1 - Decode the solutions in the environment
+        state, log_probs = self._decode_solutions(state, logits)
+
+        # 2 - Compute the objective value: only if the solution is complete
+        obj_value = self._obj_function(state)
+
+        return state, obj_value, log_probs
+
+    @abstractmethod
+    def _init_instances(self, state: State) -> State:
+        raise NotImplementedError
+
+    @abstractmethod
+    def _init_features(self, state: State) -> State:
+        raise NotImplementedError
+
+    def _init_mask(self, state: State) -> State:
+        return state
+
+    @abstractmethod
+    def _decode_solutions(self, state: State, logits: torch.Tensor) -> State:
+        raise NotImplementedError
+
+    @abstractmethod
+    def _obj_function(self, state: State) -> torch.Tensor:
+        raise NotImplementedError
+
+    def _init_solutions(self, state: State) -> State:
+        return state
+
+    def _update_features(self, state: State, action: Tuple[torch.Tensor, torch.Tensor]) -> State:
+        return state
+
+    def _update_solutions(self, state: State, action: Tuple[torch.Tensor, torch.Tensor]) -> State:
+        return state
+
+    def _update_mask(self, state: State, action: Tuple[torch.Tensor, torch.Tensor]) -> State:
+        return state
+
+    def _check_completeness(self, state: State) -> State:
+        return state
 
 
 class ImprovementProblem(Problem):

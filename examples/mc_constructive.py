@@ -188,6 +188,9 @@ mc_trainer = ConstructiveTrainer(model=mc_model,
 # %%
 # 3) Run training and inference for the Maximum Cut Problem (MC)
 mc_trainer.inference(problem_size=20, batch_size=100, pomo_size=3, deterministic=True, seed=42, verbose=True)
-mc_trainer.train(epochs=10, episodes=10, problem_size=20, batch_size=32, pomo_size=5, eval_problem_size=20,
-                 eval_batch_size=256, baseline_type='pomo', save_freq=10, save_path='', seed=42, verbose=True)
+
+mc_trainer.train(epochs=10, episodes=1, problem_size=20, batch_size=32, pomo_size=5, eval_problem_size=20,
+                 eval_batch_size=256, learn_algo='reinforce', baseline_type='pomo', save_freq=3, save_path_name='maxcut',
+                 seed=42, verbose=True)
+
 mc_trainer.inference(problem_size=20, batch_size=100, pomo_size=1, deterministic=True, seed=42, verbose=True)

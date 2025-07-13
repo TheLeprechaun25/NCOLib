@@ -3,7 +3,7 @@ from typing import Tuple
 from copy import deepcopy
 from abc import ABC, abstractmethod
 
-from nco_lib.environment.problem_def import Problem, State
+from nco_lib.environment.problem_def import Problem, State, HeatmapProblem
 from nco_lib.environment.memory import Memory, NoMemory, MarcoMemory, LastActionMemory
 from nco_lib.data.data_loader import DataLoader
 
@@ -33,6 +33,35 @@ class ConstructiveReward(Reward):
         :param normalize: If True, the reward is normalized by the problem size. Type: bool.
         """
         super(ConstructiveReward, self).__init__()
+        self.normalize = normalize # Normalize the reward by the problem size
+
+    def step(self, state: State, obj_value: torch.Tensor) -> torch.Tensor:
+        """
+        Calculate the reward at each step.
+        :param state: The current state of the environment. Type: State.
+        :param obj_value: The objective value of the current state. Type: torch.Tensor.
+        :return: The reward of the current state. Type: torch.Tensor.
+        """
+
+        if self.normalize:
+            return obj_value/state.problem_size
+        else:
+            return obj_value
+
+    def reset(self, obj_value: torch.Tensor):
+        """
+        Reset the reward.
+        """
+        pass
+
+
+class HeatmapReward(Reward):
+    def __init__(self, normalize: bool = False):
+        """
+        Constructive reward function. The reward is the objective value of the current state.
+        :param normalize: If True, the reward is normalized by the problem size. Type: bool.
+        """
+        super(HeatmapReward, self).__init__()
         self.normalize = normalize # Normalize the reward by the problem size
 
     def step(self, state: State, obj_value: torch.Tensor) -> torch.Tensor:
@@ -121,6 +150,25 @@ class ConstructiveStoppingCriteria(StoppingCriteria):
         :param obj_value: The objective value of the current state. Type: torch.Tensor.
         """
         return state.is_complete
+
+    def reset(self):
+        pass
+
+
+class HeatmapStoppingCriteria(StoppingCriteria):
+    def __init__(self):
+        """
+        Initialize the stopping criteria for constructive methods.
+        """
+        super(HeatmapStoppingCriteria, self).__init__()
+
+    def step(self, state: State, obj_value: torch.Tensor) -> bool:
+        """
+        Check if the episode has ended. The episode ends when the solution is complete.
+        :param state: The current state of the environment. Type: State.
+        :param obj_value: The objective value of the current state. Type: torch.Tensor.
+        """
+        return True
 
     def reset(self):
         pass
@@ -300,3 +348,23 @@ class Env:
         self.state.last_action = action
 
         return self.state, reward, obj_value, done
+
+    def heatmap_decode(self, logits, n_rollouts, deterministic):
+        """
+        Used in heatmap-based approaches
+        Given a set of logits, decode multiple solutions.
+        :param logits: The logits to decode. Type: torch.Tensor.
+        :param n_rollouts: The number of rollouts. Type: int.
+        :param deterministic: Whether to use deterministic actions. Type: bool.
+        :return: reward, log_prob, obj_value.
+        """
+        assert issubclass(self.problem.__class__, HeatmapProblem), "The problem class must inherit from HeatmapProblem"
+        self.state.data['n_rollouts'] = n_rollouts
+        self.state.data['deterministic'] = deterministic
+        self.state, obj_value, log_probs = self.problem.update_state(self.state, logits)
+
+        # TODO: Normalize objective value reward to [-1, 1]
+        #reward = (obj_value - self.baseline.unsqueeze(-1)) / self.boost.unsqueeze(-1)
+        reward = obj_value / self.state.problem_size
+
+        return reward, log_probs, obj_value

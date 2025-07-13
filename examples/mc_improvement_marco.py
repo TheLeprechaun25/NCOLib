@@ -179,5 +179,5 @@ mc_trainer = ImprovementTrainer(model=mc_model,
 # 3) Run training and inference for the Maximum Cut Problem (MC)
 mc_trainer.inference(problem_size=problem_size, batch_size=batch_size, pomo_size=pomo_size, deterministic=True, seed=42, verbose=True)
 mc_trainer.train(epochs=10, episodes=10, problem_size=problem_size, batch_size=batch_size, pomo_size=pomo_size, eval_problem_size=problem_size,
-                 eval_batch_size=batch_size, baseline_type='mean', save_freq=10, save_path='', seed=42, verbose=True)
+                 eval_batch_size=batch_size, baseline_type='mean', save_freq=10, save_path_name='maxcut_ni_marco', seed=42, verbose=True)
 mc_trainer.inference(problem_size=problem_size, batch_size=batch_size, pomo_size=pomo_size, deterministic=True, seed=42, verbose=True)
