@@ -279,7 +279,7 @@ class ConstructiveTrainer(Trainer):
                 raise NotImplementedError
 
             # Evaluate the model
-            if (epoch + 1) % eval_freq == 0:
+            if (eval_freq>0) and (epoch + 1) % eval_freq == 0:
                 elapsed_time = time.time() - start_time
                 obj_values = self._fast_eval(eval_state, eval_obj_value)
                 result_dict['eval_obj_values'].append(obj_values.mean().item())
@@ -605,7 +605,7 @@ class HeatmapTrainer(Trainer):
                 raise NotImplementedError
 
             # Evaluate the model
-            if (epoch + 1) % eval_freq == 0:
+            if (eval_freq>0) and (epoch + 1) % eval_freq == 0:
                 elapsed_time = time.time() - start_time
                 obj_values = self._fast_eval(eval_state, eval_obj_value)
                 result_dict['eval_obj_values'].append(obj_values.mean().item())
@@ -817,7 +817,7 @@ class ImprovementTrainer(Trainer):
     def train(self, epochs: int, episodes: int, problem_size: int, batch_size: int, pomo_size: int,
               eval_problem_size: int, eval_batch_size: int, learn_algo: str = 'reinforce', baseline_type: str = 'mean',
               update_freq: int = 10, gamma: float = 0.99, max_clip_norm: float = 1.0, ppo_args: dict = None, eval_freq: int = 1,
-              save_freq: int = 1, save_path_name: str = '', seed: int = 42, verbose: bool = False) -> dict:
+              save_freq: int = -1, save_path_name: str = '', seed: int = 42, verbose: bool = False) -> dict:
         """
         Train the improvement model.
         :param epochs: The number of epochs to train. Type: int.
@@ -885,7 +885,7 @@ class ImprovementTrainer(Trainer):
                 raise NotImplementedError
 
             # Evaluate the model
-            if (epoch + 1) % eval_freq == 0:
+            if (eval_freq>0) and ((epoch + 1) % eval_freq == 0):
                 elapsed_time = time.time() - start_time
                 obj_values = self._fast_eval(eval_state, eval_obj_value)
                 result_dict['eval_obj_values'].append(obj_values.mean().item())
@@ -1011,15 +1011,14 @@ class ImprovementTrainer(Trainer):
 
     def _train_ppo(self, episodes, problem_size, batch_size, pomo_size, gamma, ppo_args, max_clip_norm, start_time, result_dict, epoch, verbose):
 
-        ppo_epochs, ppo_clip, entropy_coef, ppo_update_batch_count, n_stored_states = ppo_args
+        #ppo_epochs, ppo_clip, entropy_coef, ppo_update_batch_count, n_stored_states = ppo_args
         # TODO use as a dict
 
         # Initialize the batch range
         batch_pomo_range = torch.arange(batch_size*pomo_size)
 
-        avg_loss = 0
         running_obj_avg = 0
-        update_count = 0
+        obj_count = 0
         all_states = []
         all_actions = []
         all_old_log_probs = []
@@ -1040,35 +1039,35 @@ class ImprovementTrainer(Trainer):
             rewards_list = []
             episode_steps = 0
             while not done:
-                state_cpu = state.cpu()
-                states_list.append(state_cpu)
+                states_list.append(state)
                 episode_steps += 1
 
                 # Get logits
-                logits = self.model(state)
+                with torch.no_grad():
+                    logits = self.model(state)
 
-                # Mask invalid actions
-                if state.mask is not None:
-                    logits = logits + state.mask.reshape(batch_size * pomo_size, logits.size(1), -1)
+                    # Mask invalid actions
+                    if state.mask is not None:
+                        logits = logits + state.mask.reshape(batch_size * pomo_size, logits.size(1), -1)
 
-                # Reshape logits to perform softmax (for multi-class)
-                logits = logits.reshape(batch_size * pomo_size, -1)  # reshape logits
+                    # Reshape logits to perform softmax (for multi-class)
+                    logits = logits.reshape(batch_size * pomo_size, -1)  # reshape logits
 
-                # Softmax to get probabilities
-                probs = torch.nn.functional.softmax(logits, dim=-1)
+                    # Softmax to get probabilities
+                    probs = torch.nn.functional.softmax(logits, dim=-1)
 
-                # Sample action from the distribution
-                action = probs.multinomial(1).squeeze(dim=1)
-                prob = probs[batch_pomo_range, action]
+                    # Sample action from the distribution
+                    action = probs.multinomial(1).squeeze(dim=1)
+                    prob = probs[batch_pomo_range, action]
 
-                # Reshape to (batch_size, pomo_size)
-                action = action.reshape(batch_size, pomo_size)
+                    # Reshape to (batch_size, pomo_size)
+                    action = action.reshape(batch_size, pomo_size)
 
-                # Set actions as a Tuple (Selected node/edge, Selected class)
-                if self.model.out_dim > 1:
-                    action = (action // self.model.out_dim, action % self.model.out_dim)
-                else:
-                    action = (action, torch.zeros_like(action))
+                    # Set actions as a Tuple (Selected node/edge, Selected class)
+                    if self.model.out_dim > 1:
+                        action = (action // self.model.out_dim, action % self.model.out_dim)
+                    else:
+                        action = (action, torch.zeros_like(action))
 
                 # Take a step in the environment
                 state, reward, obj_value, done = self.env.step(action)
@@ -1078,14 +1077,13 @@ class ImprovementTrainer(Trainer):
 
                 # Store transitions
                 actions_list.append(action)
-                old_log_probs_list.append(prob.log().detach().cpu())
-                rewards_list.append(reward.detach().cpu())
+                old_log_probs_list.append(prob.log().detach())
+                rewards_list.append(reward.detach())
 
+            running_obj_avg += best_obj_value.mean().item()
+            obj_count += 1
 
-                if done:
-                    break
-
-            discounted_sum = torch.zeros(batch_size, pomo_size, device='cpu')
+            discounted_sum = torch.zeros(batch_size, pomo_size, device=self.device)
             ep_returns = []  # will hold R_t at index t for this episode
 
             for r in reversed(rewards_list):
@@ -1100,13 +1098,16 @@ class ImprovementTrainer(Trainer):
             for t in range(episode_steps):
                 returns_t = returns_stack[t]  # [batch, pop]
                 # Leave one out baseline
-                sum_r = returns_t.sum(dim=1, keepdim=True)
-                baseline_t = (sum_r - returns_t) / (pomo_size - 1)
-                adv_t = returns_t - baseline_t  # [batch, pop]
+                if pomo_size > 1:
+                    sum_r = returns_t.sum(dim=1, keepdim=True)
+                    baseline_t = (sum_r - returns_t) / (pomo_size - 1)
+                    adv_t = returns_t - baseline_t  # [batch, pop]
+                else:
+                    adv_t = returns_t
                 advantages_list.append(adv_t)
 
             # Package episode data
-            n_to_store = min(n_stored_states, episode_steps)
+            n_to_store = min(ppo_args['n_stored_states'], episode_steps)
 
             if n_to_store >= 2:
                 # we want to include first and last, and evenly distribute the rest
@@ -1125,16 +1126,14 @@ class ImprovementTrainer(Trainer):
             all_old_log_probs.extend([old_log_probs_list[i] for i in indices])
             all_advantages.extend([advantages_list[i] for i in indices])
 
-
             if verbose:
-                print(f"Epoch {epoch + 1}, Episode {episode + 1}, Loss: {avg_loss / update_count:.4f}, "
-                      f"Reward: {reward.mean().item():.3f}, Obj value: {running_obj_avg / update_count:.3f}, "
+                print(f"Epoch {epoch + 1}, Episode {episode + 1}, "
+                      f"Reward: {reward.mean().item():.3f}, Obj value: {running_obj_avg / obj_count:.3f}, "
                       f"Best Obj value: {best_obj_value.mean().item():.3f}, "
                       f"Steps: {episode_steps}, Elapsed Time: {time.time() - start_time:.2f} sec")
 
             # Append results
-            result_dict['loss_values'].append(avg_loss / update_count)
-            result_dict['obj_values'].append(running_obj_avg / update_count)
+            result_dict['obj_values'].append(running_obj_avg / obj_count)
             result_dict['elapsed_times'].append(time.time() - start_time)
 
         # Update weights with PPO
@@ -1145,24 +1144,25 @@ class ImprovementTrainer(Trainer):
         total_entropy_accum = 0.0
         n_updates = 0
         idxs = list(range(T_total))
-        for _ in range(ppo_epochs):
+        for _ in range(ppo_args['ppo_epochs']):
             random.shuffle(idxs)
             epoch_loss = 0.0
             epoch_entropy_sum = 0.0
             batch_count = 0
             for t in range(T_total):
                 cur_idx = idxs[t]
-                state_t = all_states[cur_idx].to(self.device)  # a single “state” object
-                actions_t = all_actions[cur_idx].to(self.device)  # [batch*pop]
-                old_logp_t = all_old_log_probs[cur_idx].to(self.device)  # [batch*pop]
-                adv_t = all_advantages[cur_idx].reshape(-1).to(self.device)  # [batch*pop]
+                state_t = all_states[cur_idx]  # a single “state” object
+                actions_t = all_actions[cur_idx][0].view(batch_size*pomo_size, -1)  # [batch*pop]
+                old_logp_t = all_old_log_probs[cur_idx]  # [batch*pop]
+                adv_t = all_advantages[cur_idx].reshape(-1)  # [batch*pop]
 
                 # forward
                 new_logits = self.model(state_t)  # [batch*pop, action_dim]
+                new_logits = new_logits.reshape(batch_size * pomo_size, -1)  # reshape logits
                 new_logp = F.log_softmax(new_logits, dim=-1)  # [batch*pop]
-                new_logp_actions = new_logp.gather(1, actions_t.unsqueeze(-1)).squeeze(-1)
+                new_logp_actions = new_logp.gather(1, actions_t).squeeze(-1)
 
-                if entropy_coef == 0:
+                if ppo_args['entropy_coef'] == 0:
                     with torch.no_grad():
                         probs = new_logp.exp()
                 else:
@@ -1173,17 +1173,15 @@ class ImprovementTrainer(Trainer):
 
                 ratio = torch.exp(new_logp_actions - old_logp_t)
                 surrogate = torch.min(
-                    ratio * adv_t, torch.clamp(ratio, 1-ppo_clip, 1+ppo_clip) * adv_t
+                    ratio * adv_t, torch.clamp(ratio, 1-ppo_args['ppo_clip'], 1+ppo_args['ppo_clip']) * adv_t
                 ).mean()
 
-                #entropy = -(new_logp.exp() * new_logp).sum(-1).mean()
-
-                loss = -surrogate - entropy_coef * entropy
+                loss = -surrogate - ppo_args['entropy_coef'] * entropy
 
                 epoch_loss += loss
                 epoch_entropy_sum += entropy.item()
                 batch_count += 1
-                if (batch_count >= ppo_update_batch_count) or (t == T_total - 1):
+                if (batch_count >= ppo_args['ppo_update_batch_count']) or (t == T_total - 1):
                     # backward & step
                     self.optimizer.zero_grad()
                     epoch_loss.backward()
@@ -1200,6 +1198,8 @@ class ImprovementTrainer(Trainer):
                     epoch_entropy_sum = 0.0
                     batch_count = 0
                     n_updates += 1
+
+        result_dict['loss_values'].append(total_loss_accum / n_updates)
 
         return result_dict
 

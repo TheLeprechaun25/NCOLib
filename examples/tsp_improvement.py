@@ -166,8 +166,8 @@ class TSPImprovementProblem(ImprovementProblem):
         action = action[0]
 
         # Update the solutions using the 2-opt action
-        #state.solutions = two_opt(state.solutions, action)
-        state.solutions = insert(state.solutions, action)
+        state.solutions = two_opt(state.solutions, action)
+        #state.solutions = insert(state.solutions, action)
         #state.solutions = swap(state.solutions, action)
 
         return state
@@ -194,22 +194,29 @@ tsp_problem = TSPImprovementProblem(device=device)
 
 # Now, we define the environment for the TSP (permutation)
 tsp_env = Env(problem=tsp_problem,
-              reward=ImprovementReward(positive_only=False, normalize=True),
-              stopping_criteria=ImprovementStoppingCriteria(max_steps=200, patience=5),
+              reward=ImprovementReward(positive_only=True, normalize=True),
+              stopping_criteria=ImprovementStoppingCriteria(max_steps=200, patience=20),
               device=device)
 
 # Define the model based on 2 node features (2D coordinates)
-tsp_model = EdgeInOutGTModel(decoder='edge', node_in_dim=2, edge_in_dim=3, edge_out_dim=1, aux_node=False,
+tsp_model = EdgeInOutGTModel(decoder='attention_edge', node_in_dim=2, edge_in_dim=3, edge_out_dim=1, aux_node=True,
                              logit_clipping=10.0).to(device)
 
 # Define the RL training algorithm
 tsp_trainer = ImprovementTrainer(model=tsp_model,
                                  env=tsp_env,
-                                 optimizer=torch.optim.Adam(tsp_model.parameters(), lr=5e-4),
+                                 optimizer=torch.optim.AdamW(tsp_model.parameters(), lr=1e-4),
                                  device=device)
 # %%
 # 3) Run training and inference for the Traveling Salesman Problem
-train_results = tsp_trainer.train(epochs=1, episodes=100, problem_size=20, batch_size=64, pomo_size=1,
-                                  eval_problem_size=20, eval_batch_size=256, baseline_type='mean', verbose=True)
+ppo_args = {
+    'ppo_epochs': 10,
+    'ppo_clip': 0.2,
+    'entropy_coef': 0.0,
+    'ppo_update_batch_count': 4,
+    'n_stored_states': 10,
+}
+train_results = tsp_trainer.train(epochs=100, episodes=5, problem_size=20, batch_size=32, pomo_size=4, learn_algo='ppo', eval_freq=5,
+                                  eval_problem_size=20, eval_batch_size=256, baseline_type='pomo', ppo_args=ppo_args, verbose=True)
 
 inference_results = tsp_trainer.inference(problem_size=20, batch_size=100, pomo_size=1, deterministic=True, seed=42, verbose=True)

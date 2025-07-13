@@ -138,7 +138,7 @@ class MCImprovementProblem(ImprovementProblem):
 # 2) Define the environment, the model, and the trainer
 problem_size = 20
 batch_size = 32
-pomo_size = 1
+pomo_size = 8
 mc_problem = MCImprovementProblem(device=device)
 
 memory_type = 'marco_shared'  # 'marco_shared', 'marco_individual or 'last_action' or 'none'
@@ -154,7 +154,7 @@ mc_memory = select_memory(memory_type=memory_type,
 # Now, we define the environment for the MC problem
 mc_env = Env(problem=mc_problem,
              reward=ImprovementReward(positive_only=True, normalize=False),
-             stopping_criteria=ImprovementStoppingCriteria(max_steps=20, patience=20),
+             stopping_criteria=ImprovementStoppingCriteria(max_steps=200, patience=20),
              memory=mc_memory,
              device=device)
 
@@ -172,12 +172,33 @@ mc_model = EdgeInGTModel(node_in_dim=node_in_dim, node_out_dim=1, edge_in_dim=1,
 # Define the RL training algorithm
 mc_trainer = ImprovementTrainer(model=mc_model,
                                 env=mc_env,
-                                optimizer=torch.optim.Adam(mc_model.parameters(), lr=5e-4),
+                                optimizer=torch.optim.AdamW(mc_model.parameters(), lr=1e-4),
                                 device=device)
 
 # %%
-# 3) Run training and inference for the Maximum Cut Problem (MC)
+# 3) Run training and inference for the Maximum Cut Problem (MC) using REINFORCE
 mc_trainer.inference(problem_size=problem_size, batch_size=batch_size, pomo_size=pomo_size, deterministic=True, seed=42, verbose=True)
-mc_trainer.train(epochs=10, episodes=10, problem_size=problem_size, batch_size=batch_size, pomo_size=pomo_size, eval_problem_size=problem_size,
-                 eval_batch_size=batch_size, baseline_type='mean', save_freq=10, save_path_name='maxcut_ni_marco', seed=42, verbose=True)
+
+mc_trainer.train(epochs=10, episodes=16, problem_size=problem_size, batch_size=batch_size, pomo_size=pomo_size, learn_algo='reinforce',
+                 eval_problem_size=problem_size, eval_batch_size=batch_size, baseline_type='mean', save_freq=-1,
+                 save_path_name='maxcut_ni_marco', seed=42, verbose=True)
+
+mc_trainer.inference(problem_size=problem_size, batch_size=batch_size, pomo_size=pomo_size, deterministic=True, seed=42, verbose=True)
+
+
+# %%
+# 4) Run training and inference for the Maximum Cut Problem (MC) using PPO
+mc_trainer.inference(problem_size=problem_size, batch_size=batch_size, pomo_size=pomo_size, deterministic=True, seed=42, verbose=True)
+
+ppo_args = {
+    'ppo_epochs': 1,
+    'ppo_clip': 0.2,
+    'entropy_coef': 0.0,
+    'ppo_update_batch_count': 8,
+    'n_stored_states': 20,
+}
+mc_trainer.train(epochs=10, episodes=16, problem_size=problem_size, batch_size=batch_size, pomo_size=pomo_size, learn_algo='ppo',
+                 eval_problem_size=problem_size, eval_batch_size=batch_size, baseline_type='mean', save_freq=-1, ppo_args=ppo_args,
+                 save_path_name='maxcut_ni_marco', seed=42, verbose=True)
+
 mc_trainer.inference(problem_size=problem_size, batch_size=batch_size, pomo_size=pomo_size, deterministic=True, seed=42, verbose=True)
