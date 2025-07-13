@@ -49,6 +49,23 @@ class MCConstructiveProblem(ConstructiveProblem):
         state.adj_matrix = generate_random_graph(state.batch_size, state.problem_size, state.seed, edge_prob=0.15, device=device)
         return state
 
+    def _init_custom_instances(self, state: State) -> State:
+        """
+        Here the user can define the custom instances for the inference.
+        """
+        # If the batch_size or problem_size is modified in the custom instances, the state must be modified
+        new_batch_size = 3
+        new_problem_size = 50
+        custom_adj = generate_random_graph(new_batch_size, new_problem_size, state.seed, edge_prob=0.15, device=device)
+
+        # One could also load a custom dataset from here
+        # custom_adj = torch.load(path_to_custom_dataset)
+
+        state.batch_size = new_batch_size
+        state.problem_size = new_problem_size
+        state.adj_matrix = custom_adj
+        return state
+
     def _init_solutions(self, state: State) -> State:
         """
         Here the user can define the initialization of the solutions for the MC problem.
@@ -63,18 +80,14 @@ class MCConstructiveProblem(ConstructiveProblem):
         state.solutions = torch.zeros((state.batch_size, state.pomo_size, state.problem_size), device=state.device)
 
         # Random initialization
-        random_init = True
-        if random_init:
-            batch_indices = torch.arange(state.batch_size, device=state.device)[:, None, None].expand(state.batch_size, state.pomo_size, state.solutions.size(1))
-            pomo_indices = torch.arange(state.pomo_size, device=state.device)[None, :, None].expand(state.batch_size, state.pomo_size, state.solutions.size(1))
+        batch_indices = torch.arange(state.batch_size, device=state.device)[:, None, None].expand(state.batch_size, state.pomo_size, state.solutions.size(1))
+        pomo_indices = torch.arange(state.pomo_size, device=state.device)[None, :, None].expand(state.batch_size, state.pomo_size, state.solutions.size(1))
 
-            rand_node_indices = torch.randint(0, state.problem_size, (state.batch_size, state.pomo_size, 1), device=state.device)
-            rand_subclass = torch.randint(1, 3, (state.batch_size, state.pomo_size, 1), device=state.device)
-            state.solutions[batch_indices, pomo_indices, rand_node_indices] = rand_subclass.float()
+        rand_node_indices = torch.randint(0, state.problem_size, (state.batch_size, state.pomo_size, 1), device=state.device)
+        rand_subclass = torch.randint(1, 3, (state.batch_size, state.pomo_size, 1), device=state.device)
+        state.solutions[batch_indices, pomo_indices, rand_node_indices] = rand_subclass.float()
 
-            state.data['first_action'] = (rand_node_indices, rand_subclass)
-        else:
-            state.data['first_action'] = None
+        state.data['first_action'] = (rand_node_indices, rand_subclass)
 
         return state
 
@@ -186,11 +199,21 @@ mc_trainer = ConstructiveTrainer(model=mc_model,
                                  optimizer=torch.optim.Adam(mc_model.parameters(), lr=5e-4),
                                  device=device)
 # %%
-# 3) Run training and inference for the Maximum Cut Problem (MC)
+# 3) Run training and inference with random and custom instances for the Maximum Cut Problem (MC)
+
+# Initial inference with random instances
 mc_trainer.inference(problem_size=20, batch_size=100, pomo_size=3, deterministic=True, seed=42, verbose=True)
 
-mc_trainer.train(epochs=10, episodes=1, problem_size=20, batch_size=32, pomo_size=5, eval_problem_size=20,
-                 eval_batch_size=256, learn_algo='reinforce', baseline_type='pomo', save_freq=3, save_path_name='maxcut',
+# Initial inference with custom instances. No need to define batch and problem size, should be defined in _init_custom_instances.
+mc_trainer.inference(pomo_size=3, deterministic=True, use_custom_instances=True, seed=42, verbose=True)
+
+mc_trainer.train(epochs=1, episodes=10, problem_size=20, batch_size=32, pomo_size=5, eval_problem_size=20,
+                 eval_batch_size=256, learn_algo='reinforce', baseline_type='pomo', save_freq=-1, save_path_name='maxcut',
                  seed=42, verbose=True)
 
-mc_trainer.inference(problem_size=20, batch_size=100, pomo_size=1, deterministic=True, seed=42, verbose=True)
+# Inference with random instances
+mc_trainer.inference(problem_size=20, batch_size=100, pomo_size=3, deterministic=True, seed=42, verbose=True)
+
+# Inference with custom instances
+mc_trainer.inference(pomo_size=3, deterministic=True, use_custom_instances=True, seed=42, verbose=True)
+

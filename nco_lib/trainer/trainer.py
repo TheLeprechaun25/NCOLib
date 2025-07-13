@@ -104,14 +104,15 @@ class ConstructiveTrainer(Trainer):
         super().__init__(model, env, optimizer, device)
 
     @torch.no_grad()
-    def inference(self, problem_size: int, batch_size: int, pomo_size: int, deterministic: bool = True,
-                  seed: int or None = None, verbose: bool = False) -> (torch.Tensor, dict):
+    def inference(self, problem_size: int or None = None, batch_size: int or None = None, pomo_size: int = 1, deterministic: bool = True,
+                  use_custom_instances: bool = False, seed: int or None = None, verbose: bool = False) -> (torch.Tensor, dict):
         """
         Run the constructive model in inference mode.
-        :param problem_size: The size of the problem. Type: int.
-        :param batch_size: The size of the batch. Type: int.
+        :param problem_size: The size of the problem. Type: int or None.
+        :param batch_size: The size of the batch. Type: int or None.
         :param pomo_size: Number of parallel initializations (Policy Optimization with Multiple Optima). Type: int.
         :param deterministic: If True, choose the action with the highest probability. Type: bool.
+        :param use_custom_instances: If True, a custom instance will be loaded. Type: bool.
         :param seed: The seed for reproducibility. Type: int or None.
         :param verbose: If True, print the loss, objective value, and elapsed time. Type: bool.
 
@@ -122,6 +123,10 @@ class ConstructiveTrainer(Trainer):
         # Constructive trainer, therefore, the reward and stopping criteria should be constructive also
         assert self.env.reward.__class__.__name__ == 'ConstructiveReward', "The reward class should be ConstructiveReward"
         assert self.env.stopping_criteria.__class__.__name__ == 'ConstructiveStoppingCriteria', "The stopping criteria should be ConstructiveStoppingCriteria"
+
+        if not use_custom_instances:
+            assert problem_size is not None, "The problem size should be provided"
+            assert batch_size is not None, "The batch size should be provided"
 
         # Start timer and result dictionary
         start_time = time.time()
@@ -146,7 +151,12 @@ class ConstructiveTrainer(Trainer):
 
         # Reset the environment
         state, reward, obj_value, done = self.env.reset(problem_size=problem_size, batch_size=batch_size,
-                                                        pomo_size=pomo_size, seed=seed)
+                                                        pomo_size=pomo_size, use_custom_instances=use_custom_instances, seed=seed)
+
+        # Check if batch_size, pomo_size or problem_size have been modified while using custom instances
+        batch_size = state.batch_size
+        pomo_size = state.pomo_size
+        problem_size = state.problem_size
 
         # Main loop
         while not done:
@@ -445,15 +455,16 @@ class HeatmapTrainer(Trainer):
         super().__init__(model, env, optimizer, device)
 
     @torch.no_grad()
-    def inference(self, problem_size: int, batch_size: int, n_rollouts: int, pomo_size: int = 1, deterministic: bool = True,
-                  seed: int or None = None, verbose: bool = False) -> (torch.Tensor, dict):
+    def inference(self, problem_size: int or None = None, batch_size: int or None = None, n_rollouts: int = 1, pomo_size: int = 1,
+                  deterministic: bool = True, use_custom_instances: bool = False, seed: int or None = None, verbose: bool = False) -> (torch.Tensor, dict):
         """
         Run the heatmap model in inference mode.
-        :param problem_size: The size of the problem. Type: int.
-        :param batch_size: The size of the batch. Type: int.
+        :param problem_size: The size of the problem. Type: int or None.
+        :param batch_size: The size of the batch. Type: int or None.
         :param n_rollouts: Number of rollouts (solutions to decode). Type: int.
         :param pomo_size: Number of parallel initializations (Policy Optimization with Multiple Optima). Type: int.
         :param deterministic: If True, choose the action with the highest probability. Type: bool.
+        :param use_custom_instances: If True, custom instances will be used. Type: bool.
         :param seed: The seed for reproducibility. Type: int or None.
         :param verbose: If True, print the loss, objective value, and elapsed time. Type: bool.
 
@@ -464,6 +475,10 @@ class HeatmapTrainer(Trainer):
         # Constructive trainer, therefore, the reward and stopping criteria should be constructive also
         assert self.env.reward.__class__.__name__ == 'HeatmapReward', "The reward class should be HeatmapReward"
 
+        if not use_custom_instances:
+            assert problem_size is not None, "The problem size should be provided"
+            assert batch_size is not None, "The batch size should be provided"
+
         if pomo_size != 1:
             print("Warning: POMO size should be 1 for heatmap, use n_rollouts instead. Setting pomo_size to 1.")
             pomo_size = 1
@@ -471,8 +486,6 @@ class HeatmapTrainer(Trainer):
         # Start timer and result dictionary
         start_time = time.time()
         result_dict = {
-            'problem_size': problem_size,
-            'batch_size': batch_size,
             'deterministic': deterministic,
             'seed': seed,
 
@@ -491,12 +504,18 @@ class HeatmapTrainer(Trainer):
 
         # Reset the environment
         state, reward, obj_value, done = self.env.reset(problem_size=problem_size, batch_size=batch_size,
-                                                        pomo_size=pomo_size, seed=seed)
+                                                        pomo_size=pomo_size, use_custom_instances=use_custom_instances,
+                                                        seed=seed)
+
+        # Check if batch_size, pomo_size or problem_size have been modified while using custom instances
+        batch_size = state.batch_size
+        pomo_size = state.pomo_size
+        problem_size = state.problem_size
 
         # Get logits
         logits = self.model(state)
         if state.mask is not None:
-            logits = logits + state.mask.reshape(batch_size, logits.size(1), -1)  # mask invalid actions
+            logits = logits + state.mask.reshape(state.batch_size, logits.size(1), -1)  # mask invalid actions
 
         # Take a step in the environment
         reward, _, obj_value = self.env.heatmap_decode(logits, n_rollouts=n_rollouts, deterministic=deterministic)
@@ -507,7 +526,7 @@ class HeatmapTrainer(Trainer):
         result_dict['logits'].append(logits)
 
         # Reshape the objective value
-        obj_value = obj_value.reshape(batch_size, n_rollouts)
+        obj_value = obj_value.reshape(state.batch_size, n_rollouts)
 
         # End-of-inference
         elapsed_time = time.time() - start_time
@@ -539,7 +558,6 @@ class HeatmapTrainer(Trainer):
         :param eval_problem_size: The size of the evaluation problem. Type: int.
         :param eval_batch_size: The size of the evaluation batch. Type: int.
         :param learn_algo: The Learning Algorithm. Options: 'reinforce', 'ppo'. Type: str.
-        :param baseline_type: The baseline type to use. Options: 'mean', 'scst', 'pomo' Type: str.
         :param max_clip_norm: The maximum norm for clipping gradients. Type: float.
         :param eval_freq: The frequency (in epochs) of evaluating the model. Type: int.
         :param save_freq: The frequency (in epochs) of saving the model. Type: int.
@@ -710,14 +728,15 @@ class ImprovementTrainer(Trainer):
         super().__init__(model, env, optimizer, device)
 
     @torch.no_grad()
-    def inference(self, problem_size: int, batch_size: int, pomo_size: int, deterministic: bool = True,
-                  seed: int or None = None, verbose: bool = False) -> (torch.Tensor, dict):
+    def inference(self, problem_size: int or None = None, batch_size: int or None = None, pomo_size: int = 1, deterministic: bool = True,
+                  use_custom_instances: bool = False, seed: int or None = None, verbose: bool = False) -> (torch.Tensor, dict):
         """
         Run the improvement model in inference mode.
-        :param problem_size: The size of the problem. Type: int.
-        :param batch_size: The size of the batch. Type: int.
+        :param problem_size: The size of the problem. Type: int or None.
+        :param batch_size: The size of the batch. Type: int or None.
         :param pomo_size: Number of parallel initializations (Policy Optimization with Multiple Optima). Type: int.
         :param deterministic: If True, choose the action with the highest probability. Type: bool.
+        :param use_custom_instances: If True, custom instances will be used. Type: bool.
         :param seed: The seed for reproducibility. Type: int or None.
         :param verbose: If True, print the loss, objective value, and elapsed time. Type: bool.
 
@@ -729,11 +748,13 @@ class ImprovementTrainer(Trainer):
         assert self.env.reward.__class__.__name__ == 'ImprovementReward', "The reward class should be ImprovementReward"
         assert self.env.stopping_criteria.__class__.__name__ == 'ImprovementStoppingCriteria', "The stopping criteria should be ImprovementStoppingCriteria"
 
+        if not use_custom_instances:
+            assert problem_size is not None, "The problem size should be provided"
+            assert batch_size is not None, "The batch size should be provided"
+
         # Start timer and result dictionary
         start_time = time.time()
         result_dict = {
-            'problem_size': problem_size,
-            'batch_size': batch_size,
             'deterministic': deterministic,
             'seed': seed,
 
@@ -754,7 +775,13 @@ class ImprovementTrainer(Trainer):
 
         # Reset the environment
         state, reward, obj_value, done = self.env.reset(problem_size=problem_size, batch_size=batch_size,
-                                                        pomo_size=pomo_size, seed=seed)
+                                                        pomo_size=pomo_size, use_custom_instances=use_custom_instances,
+                                                        seed=seed)
+
+        # Check if batch_size, pomo_size or problem_size have been modified while using custom instances
+        batch_size = state.batch_size
+        pomo_size = state.pomo_size
+        problem_size = state.problem_size
 
         # Main inference loop
         step = 0

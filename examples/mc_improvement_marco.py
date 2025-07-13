@@ -51,6 +51,23 @@ class MCImprovementProblem(ImprovementProblem):
         state.adj_matrix = generate_random_graph(state.batch_size, state.problem_size, state.seed, edge_prob=0.15, device=self.device)
         return state
 
+    def _init_custom_instances(self, state: State) -> State:
+        """
+        Here the user can define the custom instances for the inference.
+        """
+        # If the batch_size or problem_size is modified in the custom instances, the state must be modified
+        new_batch_size = 3
+        new_problem_size = 50
+        custom_adj = generate_random_graph(new_batch_size, new_problem_size, state.seed, edge_prob=0.15, device=device)
+
+        # One could also load a custom dataset from here
+        # custom_adj = torch.load(path_to_custom_dataset)
+
+        state.batch_size = new_batch_size
+        state.problem_size = new_problem_size
+        state.adj_matrix = custom_adj
+        return state
+
     def _init_solutions(self, state: State) -> State:
         """
         Here the user can define the initialization of the solutions for the MC problem.
@@ -188,6 +205,10 @@ mc_trainer.inference(problem_size=problem_size, batch_size=batch_size, pomo_size
 
 # %%
 # 4) Run training and inference for the Maximum Cut Problem (MC) using PPO
+mc_trainer = ImprovementTrainer(model=mc_model,
+                                env=mc_env,
+                                optimizer=torch.optim.AdamW(mc_model.parameters(), lr=1e-4),
+                                device=device)
 mc_trainer.inference(problem_size=problem_size, batch_size=batch_size, pomo_size=pomo_size, deterministic=True, seed=42, verbose=True)
 
 ppo_args = {
@@ -202,3 +223,6 @@ mc_trainer.train(epochs=10, episodes=16, problem_size=problem_size, batch_size=b
                  save_path_name='maxcut_ni_marco', seed=42, verbose=True)
 
 mc_trainer.inference(problem_size=problem_size, batch_size=batch_size, pomo_size=pomo_size, deterministic=True, seed=42, verbose=True)
+
+# Inference with custom graphs
+mc_trainer.inference(problem_size=20, batch_size=100, pomo_size=3, deterministic=True, use_custom_instances=True, seed=42, verbose=True)

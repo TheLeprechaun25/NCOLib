@@ -5,7 +5,6 @@ from abc import ABC, abstractmethod
 
 from nco_lib.environment.problem_def import Problem, State, HeatmapProblem
 from nco_lib.environment.memory import Memory, NoMemory, MarcoMemory, LastActionMemory
-from nco_lib.data.data_loader import DataLoader
 
 
 class Reward(ABC):
@@ -228,14 +227,13 @@ class ImprovementStoppingCriteria(StoppingCriteria):
 
 class Env:
     def __init__(self, problem: Problem, reward: Reward, stopping_criteria: StoppingCriteria,
-                 memory: Memory = None, data_loader: DataLoader or None = None, device: torch.device or str = 'cpu'):
+                 memory: Memory = None, device: torch.device or str = 'cpu'):
         """
         Initialize the NCO environment.
         :param problem: The problem definition. Type: Problem.
         :param reward: The reward function. Type: Reward.
         :param stopping_criteria: The stopping criteria. Type: StoppingCriteria.
         :param memory: The memory to use for the environment. Type: Memory.
-        :param data_loader: The dataset loader class. Type: DataLoader.
         :param device: The device to use for computations. Type: str.
         """
         self.problem = problem
@@ -245,10 +243,6 @@ class Env:
         self.device = device
 
         self.state: State or None = None  # The current state of the environment
-
-        self.data_loader: DataLoader or None = data_loader  # The dataset loader used to train.
-        if data_loader is not None:
-            self.data_loader.load_data()  # Load the dataset
 
         self.iteration: int = 0  # The current iteration
 
@@ -278,22 +272,41 @@ class Env:
         return self.state, reward, obj_value, False
 
 
-    def reset(self, problem_size: int or range, batch_size: int, pomo_size: int, seed: int or None = None) -> (State, torch.Tensor, torch.Tensor, bool):
+    def reset(self, problem_size: int or range, batch_size: int, pomo_size: int, use_custom_instances: bool = False, seed: int or None = None) -> (State, torch.Tensor, torch.Tensor, bool):
         """
         Reset the environment to an initial state and return it.
         :param problem_size: The size of the problem (number of nodes) or a range of problem sizes. Type: int or range.
         :param batch_size: The number of instances in the batch. Type: int.
         :param pomo_size: Number of parallel initializations (Policy Optimization with Multiple Optima). Type: int.
+        :param use_custom_instances: If True, custom instances will be loaded. Type: bool.
         :param seed: The seed for reproducibility. Type: int or None.
         :return: The initial state, reward, and a boolean indicating if the episode has ended.
         """
         # Set the current problem size
-        assert isinstance(problem_size, int) or isinstance(problem_size, range), "Problem size must be an integer or a range."
-        cur_problem_size = problem_size if isinstance(problem_size, int) else torch.randint(low=problem_size.start, high=problem_size.stop, size=(1,)).item()
+        if problem_size is not None:
+            assert isinstance(problem_size, int) or isinstance(problem_size, range), "Problem size must be an integer or a range."
+            cur_problem_size = problem_size if isinstance(problem_size, int) else torch.randint(low=problem_size.start, high=problem_size.stop, size=(1,)).item()
+        else:
+            cur_problem_size = problem_size
 
         # Generate the initial state
         self.state, obj_value = self.problem.generate_state(problem_size=cur_problem_size, batch_size=batch_size,
-                                                            pomo_size=pomo_size, seed=seed)
+                                                            pomo_size=pomo_size, use_custom_instances=use_custom_instances,
+                                                            seed=seed)
+
+        # Check for custom instances
+        if cur_problem_size is None:
+            # Check problem
+            assert self.state.problem_size is not None, "Problem size must be provided."
+            cur_problem_size = self.state.problem_size
+
+        if batch_size is None:
+            assert self.state.batch_size is not None, "Batch size must be provided."
+            batch_size = self.state.batch_size
+
+        if pomo_size is None:
+            assert self.state.pomo_size is not None, "Pomo size must be provided."
+            pomo_size = self.state.pomo_size
 
         # add the memory information to the state
         if isinstance(self.memory, NoMemory):
@@ -301,11 +314,6 @@ class Env:
         else:
             # add a dummy tensor to keep the dimensions
             self.state.memory_info = torch.zeros((batch_size, pomo_size, cur_problem_size, self.mem_dim), device=self.device)
-
-        # Check whether the DataLoader will be used
-        if self.data_loader is not None:
-            # Generate a batch from the dataset
-            self.state.data['loaded_data'] = self.data_loader.generate_batch(batch_size=batch_size)
 
         # Calculate the reward
         reward = self.reward.reset(obj_value)
@@ -363,7 +371,7 @@ class Env:
         self.state.data['deterministic'] = deterministic
         self.state, obj_value, log_probs = self.problem.update_state(self.state, logits)
 
-        # TODO: Normalize objective value reward to [-1, 1]
+        # TODO: Normalize objective value reward
         #reward = (obj_value - self.baseline.unsqueeze(-1)) / self.boost.unsqueeze(-1)
         reward = obj_value / self.state.problem_size
 

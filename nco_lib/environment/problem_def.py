@@ -57,7 +57,7 @@ class Problem(ABC):
         self.edge_in_dim = 0 if aux_state.edge_features is None else aux_state.edge_features.size(-1)
 
     @abstractmethod
-    def generate_state(self, batch_size: int, problem_size: int, pomo_size: int, seed: int or None = None) -> State:
+    def generate_state(self, batch_size: int, problem_size: int, pomo_size: int, use_custom_instances: bool, seed: int or None = None) -> State:
         """
         Generate a batch of states for the problem. Follows the following steps:
         1 - Generate new graphs
@@ -69,6 +69,7 @@ class Problem(ABC):
         :param batch_size: int: Number of instances in the batch.
         :param problem_size: int or list: Size of the problem (number of nodes).
         :param pomo_size: int: Number of parallel initializations (Policy Optimization with Multiple Optima).
+        :param use_custom_instances: bool: If True, a custom instance will be loaded.
         :param seed: int or None: Seed for reproducibility.
         :return: State: A state class with features representing the problem instance.
         """
@@ -92,6 +93,10 @@ class Problem(ABC):
 
     @abstractmethod
     def _init_instances(self, state: State) -> State:
+        raise NotImplementedError
+
+    @abstractmethod
+    def _init_custom_instances(self, state: State) -> State:
         raise NotImplementedError
 
     @abstractmethod
@@ -135,7 +140,7 @@ class ConstructiveProblem(Problem):
         super().__init__(device)
         self.device = torch.device(device)
 
-    def generate_state(self, problem_size: int, batch_size: int, pomo_size: int, seed: int or None = None) -> (State, torch.Tensor):
+    def generate_state(self, problem_size: int, batch_size: int, pomo_size: int, use_custom_instances: bool, seed: int or None = None) -> (State, torch.Tensor):
         """
         Generate a batch of states for the problem.
 
@@ -149,7 +154,10 @@ class ConstructiveProblem(Problem):
                       device=self.device, seed=seed)
 
         # 1 - Generate new graphs
-        state = self._init_instances(state)
+        if use_custom_instances:
+            state = self._init_custom_instances(state)
+        else:
+            state = self._init_instances(state)
 
         # 2 - Initialize the solution
         state = self._init_solutions(state)
@@ -199,6 +207,9 @@ class ConstructiveProblem(Problem):
     def _init_instances(self, state: State) -> State:
         raise NotImplementedError
 
+    def _init_custom_instances(self, state: State) -> State:
+        raise NotImplementedError
+
     @abstractmethod
     def _init_solutions(self, state: State) -> State:
         raise NotImplementedError
@@ -239,7 +250,7 @@ class HeatmapProblem(Problem):
         super().__init__(device)
         self.device = torch.device(device)
 
-    def generate_state(self, problem_size: int, batch_size: int, pomo_size: int, seed: int or None = None) -> (State, torch.Tensor):
+    def generate_state(self, problem_size: int, batch_size: int, pomo_size: int, use_custom_instances: bool, seed: int or None = None) -> (State, torch.Tensor):
         """
         Generate a batch of states for the problem.
 
@@ -253,7 +264,10 @@ class HeatmapProblem(Problem):
                       device=self.device, seed=seed)
 
         # 1 - Generate new graphs
-        state = self._init_instances(state)
+        if use_custom_instances:
+            state = self._init_custom_instances(state)
+        else:
+            state = self._init_instances(state)
 
         # 2 - Initialize the solution
         state = self._init_solutions(state)
@@ -287,6 +301,9 @@ class HeatmapProblem(Problem):
 
     @abstractmethod
     def _init_instances(self, state: State) -> State:
+        raise NotImplementedError
+
+    def _init_custom_instances(self, state: State) -> State:
         raise NotImplementedError
 
     @abstractmethod
@@ -328,7 +345,7 @@ class ImprovementProblem(Problem):
         super().__init__(device)
         self.device = torch.device(device)
 
-    def generate_state(self, problem_size: int, batch_size: int, pomo_size: int, seed: int = None):
+    def generate_state(self, problem_size: int, batch_size: int, pomo_size: int, use_custom_instances: bool, seed: int = None):
         """
         Generate a batch of states for the problem.
 
@@ -341,7 +358,10 @@ class ImprovementProblem(Problem):
                       solutions=None, mask=None, is_complete=False, device=self.device, seed=seed)
 
         # 1 - Generate new graphs
-        state = self._init_instances(state)
+        if use_custom_instances:
+            state = self._init_custom_instances(state)
+        else:
+            state = self._init_instances(state)
 
         # 2 - Initialize the solution
         state = self._init_solutions(state)
@@ -380,6 +400,9 @@ class ImprovementProblem(Problem):
 
     @abstractmethod
     def _init_instances(self, state: State) -> State:
+        raise NotImplementedError
+
+    def _init_custom_instances(self, state: State) -> State:
         raise NotImplementedError
 
     @abstractmethod
