@@ -196,7 +196,7 @@ lop_env = Env(problem=lop_problem,
               device=device)
 
 # Define the model
-lop_model = EdgeGNNModel(decoder='edge', node_in_dim=1, edge_in_dim=2, edge_out_dim=1, aux_node=False,
+lop_model = EdgeGNNModel(decoder='linear_edge', node_in_dim=1, edge_in_dim=2, edge_out_dim=1, aux_node=False,
                          logit_clipping=10.0).to(device)
 
 # Define the RL training algorithm
@@ -206,8 +206,8 @@ lop_trainer = ImprovementTrainer(model=lop_model,
                                  device=device)
 # %%
 # 3) Run training and inference
-train_results = lop_trainer.train(epochs=10, episodes=100, problem_size=20, batch_size=32, pomo_size=3,
-                                  eval_problem_size=20, eval_batch_size=256, baseline_type='mean', update_freq=10,
+train_results = lop_trainer.train(epochs=10, episodes=100, problem_size=20, batch_size=4, pomo_size=1,
+                                  eval_problem_size=20, eval_batch_size=256, baseline_type='mean', update_freq=4,
                                   verbose=True)
 
 lop_trainer.inference(problem_size=20, batch_size=100, pomo_size=1, deterministic=True, seed=42, verbose=True)

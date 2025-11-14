@@ -94,18 +94,19 @@ Under development.
 - Add data augmentation (POMO).
 - Add graph-context via auxiliary or virtual node.
 - Add a decoder that uses attention to the graph-context.
+- Add a memory-mechanism to env and model (MARCO).
+- Add Non-AutoRegressive (heatmap) Problem Class.
 
 ### To do:
-- Add other GNN architectures: GIS, GAT, etc.
+- Add other GNN architectures: GIS, GAT, AttnNet, etc.
 - In Constructive method, deal with the case in which each instance in the batch gets completed in different iterations.
-- Actor critic and PPO training.
+- PPO training.
 - Include datasets to be used as an alternative to random generators.
 - Add tests: check the validity of created solutions and features in user defined functions
 - Add more problems to examples: scheduling, assignment, etc.
 - Add more evaluation metrics beside obj. value: convergence time and stability across different runs
-- Add memory-mechanism to env and model (MARCO).
-- Add Non-Auto-regressive (heatmap) + search (subclass of Problem).
-
+- Add docs about constructive, improvement and heatmap problem classes.
+- Implement imitation learning trainer. With custom datasets with optimal labels.
 
 ## Contributing
 We welcome contributions from the community! If you are interested in helping to develop NCOLib, whether you're fixing bugs, adding features, or improving documentation, your help is appreciated.

@@ -147,5 +147,5 @@ class EdgeGNNModel(nn.Module):
             out = out / self.sqrt_embedding_dim
             out = self.logit_clipping * torch.tanh(out)
 
-        return out, aux_node
+        return out
 

@@ -55,22 +55,21 @@ class LinearEdgeDecoder(BaseDecoder):
         self.aux_node = aux_node
         self.linear = nn.Linear(hidden_dim, edge_out_dim, bias=bias)
 
-    def forward(self, h):
+    def forward(self, e):
         """
         Forward pass for the LinearDecoder.
-        :param h: torch.Tensor: The input node embeddings. Shape: (batch_size, n_edges, hidden_dim).
+        :param e: torch.Tensor: The input node embeddings. Shape: (batch_size, n_edges, hidden_dim).
         """
-        bp, n, _ = h.shape
-        if self.aux_node:
-            h, aux_node = h[:, :-1, :], h[:, -1:, :]
+        bp, n, _ = e.shape
+        aux_node = None
 
         # Get edge embedding e_ij by concatenating h_i and h_j
-        e = torch.cat([h.unsqueeze(1).expand(-1, n, -1, -1), h.unsqueeze(2).expand(-1, -1, n, -1)], dim=-1)
+        #e = torch.cat([h.unsqueeze(1).expand(-1, n, -1, -1), h.unsqueeze(2).expand(-1, -1, n, -1)], dim=-1)
 
         # reshape e_out to (batch_size, n_edges, hidden_dim)
-        e = e.view(bp, -1, e.size(-1))
+        #e = e.view(bp, -1, e.size(-1))
 
-        return self.linear(e)
+        return self.linear(e), aux_node
 
 
 class AttentionEdgeDecoder(BaseDecoder):
